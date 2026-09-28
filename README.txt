@@ -10,3 +10,6 @@ MELE DE PETANCA - VERSION 7
 - Historico por rondas en Clasificacion.
 - Historial de companeros/rivales solo del campeonato actual.
 - Cache actualizada a v7.
+
+
+Versión 8: en Melé equilibrada, se prioriza estrictamente no repetir compañeros ni contrincantes y evitar que antiguos compañeros sean rivales; solo se relaja si no existe una combinación válida.
