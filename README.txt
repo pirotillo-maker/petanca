@@ -1,3 +1,12 @@
-MELE DE PETANCA
-Incluye Melé equilibrada y Sistema suizo internacional, historial solo del campeonato actual, no repetir compañeros/rivales en la medida posible, penalización fuerte compañero->rival, tripletas, 1 contra 1, pistas, resultados, clasificación y navegación de rondas.
-Para GitHub Pages: subir index.html, manifest.json y sw.js; Settings > Pages > Deploy from a branch.
+MELE DE PETANCA - VERSION 7
+
+- Mele equilibrada.
+- Sistema suizo internacional.
+- Sin descansos.
+- 2x2 y 3x3 como formatos normales.
+- 3x2 permitido para cuadrar cuando haga falta.
+- 1x1 solo si quedan exactamente 2 y esta activado.
+- Nunca 2x1.
+- Historico por rondas en Clasificacion.
+- Historial de companeros/rivales solo del campeonato actual.
+- Cache actualizada a v7.
