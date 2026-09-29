@@ -4,40 +4,37 @@
 <section id="round" class="tab hidden"><div class="card"><div class="row"><button class="s" onclick="move(-1)">‹</button><h2 id="rt"></h2><button class="s" onclick="move(1)">›</button></div><div id="ri" class="muted"></div><div id="games"></div><button class="p" onclick="gen()">Sortear / generar ronda</button> <button class="s" onclick="saveR()">Guardar resultados</button></div></section>
 <section id="stand" class="tab hidden"><div class="card"><h2>Clasificación</h2><div id="st"></div></div></section></main>
 <script>
-const K='mele_petanca_v10';let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};const key=(a,b)=>[a,b].sort().join('|');const pts=p=>p.w+p.d*.5;
+const K='mele_petanca_v11';let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};const key=(a,b)=>[a,b].sort().join('|');const pts=p=>p.w+p.d*.5;
 function tab(x){document.querySelectorAll('.tab').forEach(e=>e.classList.add('hidden'));$(x).classList.remove('hidden');render()}function newC(){if(S.started&&!confirm('Se borrará el campeonato actual y su historial. ¿Continuar?'))return;S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:[],roundsData:[],started:false};vr=0;save();tab('players')}
 function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}function del(id){if(S.started)return;S.players=S.players.filter(p=>p.id!==id);save();render()}
 function sizes(n){
-  // MELÉ EQUILIBRADA: primero se decide la composición óptima y después se sortean las personas.
-  // Con 1x1 activado: SOLO 2x2, salvo un único 1x1 cuando n es impar.
-  // Con 1x1 desactivado: máximo número de 2x2; después mínimo número de encuentros
-  // que contienen tripletas. Entre ellos se prioriza 3x2 frente a 3x3.
-  if(S.sys==='balanced' && S.one){
-    if(n%2===0) return Array(n/4).fill(4);
-    if(n>=3) return [...Array((n-2)/4).fill(4),2];
-  }
+  // Composición óptima de la Melé equilibrada.
+  // Prioridad absoluta: máximo número de 2x2; después mínimo de partidas con tripletas.
+  // Nadie descansa. 3x2 se usa antes que 3x3 cuando ambas opciones tienen el mismo número de 2x2/tripletas.
   const memo=new Map();
   function better(a,b){
     if(!b)return true;
     if(a.doubles!==b.doubles)return a.doubles>b.doubles;
     if(a.tripGames!==b.tripGames)return a.tripGames<b.tripGames;
     if(a.threeTwo!==b.threeTwo)return a.threeTwo>b.threeTwo;
+    if(a.ones!==b.ones)return a.ones<b.ones;
     return a.games>b.games;
   }
   function f(x){
-    if(x===0)return {sizes:[],doubles:0,tripGames:0,threeTwo:0,games:0};
+    if(x===0)return {sizes:[],doubles:0,tripGames:0,threeTwo:0,ones:0,games:0};
     if(x<0)return null;
     if(memo.has(x))return memo.get(x);
     let best=null;
-    // 4=2x2; 5=3x2; 6=3x3. 1x1 solo si está activado y es el remanente exacto de 2.
-    for(const z of [4,5,6,2]){
-      if(z===2){
-        if(!S.one || x!==2) continue;
-      }else if(z===5 || z===6){
-        if(!S.tri) continue;
-      }
+    // 2x2 siempre permitido. 3x2/3x3 solo si tripletas están permitidas.
+    const choices=[4];
+    if(S.tri) choices.push(5,6);
+    // 1x1 solo puede aparecer como partida independiente si está activado.
+    if(S.one) choices.push(2);
+    for(const z of choices){
+      // El 1x1 se reserva para cuadrar un remanente de 2; nunca se usa como primera elección.
+      if(z===2 && x!==2) continue;
       const r=f(x-z); if(!r)continue;
-      const c={sizes:[z,...r.sizes],doubles:r.doubles+(z===4?1:0),tripGames:r.tripGames+(z===5||z===6?1:0),threeTwo:r.threeTwo+(z===5?1:0),games:r.games+1};
+      const c={sizes:[z,...r.sizes],doubles:r.doubles+(z===4?1:0),tripGames:r.tripGames+(z===5||z===6?1:0),threeTwo:r.threeTwo+(z===5?1:0),ones:r.ones+(z===2?1:0),games:r.games+1};
       if(better(c,best))best=c;
     }
     memo.set(x,best); return best;

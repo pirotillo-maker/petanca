@@ -17,7 +17,7 @@ Versión 8: en Melé equilibrada, se prioriza estrictamente no repetir compañer
 Versión 9: Melé equilibrada prioriza matemáticamente el máximo número de partidas 2x2; después 3x3 y 3x2. Sin descansos ni 2x1.
 
 
-Reglas Melé equilibrada v10:
+Reglas Melé equilibrada v11:
 - 1x1 activado: solo 2x2, y un único 1x1 si el número de jugadores es impar.
 - 1x1 desactivado: máximo número de 2x2; después mínimo número de encuentros con tripletas, priorizando 3x2 frente a 3x3.
 - Sin descansos ni 2x1.
