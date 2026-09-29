@@ -44,33 +44,91 @@ function sizes(n){
 function part(ids){let ss=sizes(ids.length);if(!ss.length)return null;ids=sh(ids);let out=[],k=0;for(let n of ss){let g=ids.slice(k,k+n);k+=n;if(n===2)out.push({teams:[[g[0]],[g[1]]]});else if(n===4)out.push({teams:[[g[0],g[1]],[g[2],g[3]]]});else if(n===5){if(Math.random()<.5)out.push({teams:[[g[0],g[1],g[2]],[g[3],g[4]]]});else out.push({teams:[[g[0],g[1]],[g[2],g[3],g[4]]]})}else if(n===6){let a=sh(g);out.push({teams:[a.slice(0,3),a.slice(3,6)]})}}return {games:out}}
 function rel(){let tm=new Set(),rv=new Set(),ct={tm:new Map,rv:new Map};for(let r of S.roundsData)for(let g of r.games){for(let t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let k=key(t[i],t[j]);tm.add(k);ct.tm.set(k,(ct.tm.get(k)||0)+1)}if(g.teams.length>1)for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);rv.add(k);ct.rv.set(k,(ct.rv.get(k)||0)+1)}}return{tm,rv,ct}}
 function quality(gs,R){let q=Math.random()*2;for(let g of gs){for(let t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let k=key(t[i],t[j]);if(R.tm.has(k))q+=100000000;q+=(R.ct.tm.get(k)||0)*1000}if(g.teams.length>1)for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);if(R.tm.has(k))q+=100000000;if(R.rv.has(k))q+=10000000;q+=(R.ct.rv.get(k)||0)*1000}}return q}
+function canBeTeammates(group,R){
+  for(let i=0;i<group.length;i++)for(let j=i+1;j<group.length;j++)if(R.tm.has(key(group[i],group[j])))return false;
+  return true;
+}
+function canFace(a,b,R){
+  // En Melé equilibrada no se permite repetir rival ni enfrentar a un antiguo compañero
+  // mientras exista una solución alternativa.
+  for(let x of a)for(let y of b){let k=key(x,y);if(R.rv.has(k)||R.tm.has(k))return false;}
+  return true;
+}
+function buildTeams(ids,ss,R){
+  let remaining=sh(ids),teams=[];
+  // Construcción global: primero grupos grandes, escogiendo compañeros sin repetir.
+  ss=[...ss].sort((a,b)=>b-a);
+  for(let size of ss){
+    let best=null,bscore=Infinity;
+    const trials=Math.min(900,Math.max(120,remaining.length*12));
+    for(let q=0;q<trials;q++){
+      let cand=sh(remaining).slice(0,size);
+      if(cand.length<size||!canBeTeammates(cand,R))continue;
+      let sc=Math.random()*30;
+      for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
+        let k=key(cand[i],cand[j]); sc+=(R.ct.tm.get(k)||0)*10000;
+      }
+      if(sc<bscore){bscore=sc;best=cand;}
+    }
+    if(!best)return null;
+    teams.push(best);let used=new Set(best);remaining=remaining.filter(x=>!used.has(x));
+  }
+  return teams;
+}
+function pairTeams(teams,R){
+  // Emparejamiento global de equipos. Primero intenta cumplir las tres reglas duras.
+  if(teams.length%2)return null;
+  const n=teams.length;
+  let order=teams.map((_,i)=>i);
+  let best=null,bestCost=Infinity;
+  function rec(left,pairs,cost){
+    if(!left.length){if(cost<bestCost){best=pairs.slice();bestCost=cost;}return;}
+    if(bestCost===0)return;
+    let ai=left[Math.floor(Math.random()*left.length)];
+    let rest=left.filter(x=>x!==ai);
+    let cand=rest.map(b=>{
+      let hard=!canFace(teams[ai],teams[b],R), c=hard?1e9:0;
+      if(!hard){for(let x of teams[ai])for(let y of teams[b]){let k=key(x,y);c+=(R.ct.rv.get(k)||0)*10000+(R.ct.tm.get(k)||0)*100000;}}
+      return {b,c};
+    }).sort((u,v)=>u.c-v.c || Math.random()-.5);
+    // Prioridad absoluta: si existe algún emparejamiento sin conflictos, no se consideran los conflictivos.
+    for(let z of cand){
+      if(z.c>=1e9)continue;
+      if(cand.length>0 && z.c>bestCost && bestCost===0)continue;
+      let nl=rest.filter(x=>x!==z.b);
+      rec(nl,pairs.concat([[ai,z.b]]),cost+z.c);
+      if(bestCost===0)return;
+    }
+  }
+  rec(order,[],0);
+  if(!best)return null;
+  return best.map(([a,b])=>({teams:[teams[a],teams[b]]}));
+}
 function balanced(ids){
   if(!S.roundsData.length)return part(ids);
   const R=rel();
-  let best=null,b=Infinity,hard=null;
-  const tries=Math.min(120000,Math.max(20000,ids.length*5000));
+  const ss=sizes(ids.length); if(!ss.length)return null;
+  // La composición ya está optimizada por sizes(): máximo 2x2, después mínimo de tripletas.
+  // Para cada composición, se construyen primero los equipos y después se resuelve globalmente
+  // el emparejamiento de rivales. Se descarta cualquier ronda que repita compañero/rival o
+  // enfrente a antiguos compañeros, mientras exista una solución sin esos conflictos.
+  let fallback=null, fallbackCost=Infinity;
+  const tries=Math.min(5000,Math.max(300,ids.length*100));
   for(let i=0;i<tries;i++){
-    let g=part(ids);
-    if(!g)continue;
-    let q=quality(g.games,R);
-    if(q<b){b=q;best=g}
-    // En la melé equilibrada estas reglas son prioritarias y se respetan siempre que exista una solución matemática.
-    let bad=false;
-    for(let game of g.games){
-      for(let t of game.teams)for(let x=0;x<t.length;x++)for(let y=x+1;y<t.length;y++){
-        let k=key(t[x],t[y]);
-        if(R.tm.has(k)){bad=true;break}
+    let teams=buildTeams(ids,ss,R); if(!teams)continue;
+    let games=pairTeams(teams,R); if(!games)continue;
+    let hard=0,cost=0;
+    for(let g of games){
+      for(let t of g.teams)for(let a=0;a<t.length;a++)for(let b=a+1;b<t.length;b++){
+        let k=key(t[a],t[b]);if(R.tm.has(k))hard++;cost+=R.ct.tm.get(k)||0;
       }
-      if(bad)break;
-      if(game.teams.length>1)for(let a of game.teams[0])for(let b2 of game.teams[1]){
-        let k=key(a,b2);
-        if(R.rv.has(k)||R.tm.has(k)){bad=true;break}
-      }
-      if(bad)break;
+      for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);if(R.rv.has(k))hard++;if(R.tm.has(k))hard+=10;cost+=(R.ct.rv.get(k)||0)*10+(R.ct.tm.get(k)||0)*100;}
     }
-    if(!bad){hard=g;break}
+    let total=hard*100000000+cost*1000+Math.random()*10;
+    if(total<fallbackCost){fallbackCost=total;fallback= {games};}
+    if(hard===0)return {games};
   }
-  return hard||best;
+  return fallback;
 }
 function swiss(ids){let pm=new Map(S.players.map(p=>[p.id,p])),R=rel(),groups=new Map();for(let id of ids){let score=pts(pm.get(id));if(!groups.has(score))groups.set(score,[]);groups.get(score).push(id)}let ordered=[...groups.keys()].sort((a,b)=>b-a).flatMap(sc=>sh(groups.get(sc)));let best=null,bv=Infinity;for(let i=0;i<Math.min(8000,Math.max(1200,ids.length*180));i++){let g=part(ordered);if(g){let q=quality(g.games,R);for(let game of g.games){let scores=game.teams.map(t=>t.reduce((z,id)=>z+pts(pm.get(id)),0)/t.length);q+=Math.abs(scores[0]-scores[1])*4000}if(q<bv){bv=q;best=g}}}return best}
 function complete(r){return r&&r.games.length&&r.games.every(g=>g.result&&g.result.a!=null&&g.result.b!=null)}function valid(g){let s=new Set;for(let x of g.games){if(x.teams.length!==2)return false;let a=x.teams[0].length,b=x.teams[1].length;if(!((a===1&&b===1)||(a===2&&b===2)||(a===3&&b===3)||(a===3&&b===2)||(a===2&&b===3)))return false;for(let t of x.teams)for(let id of t){if(s.has(id))return false;s.add(id)}}return s.size===S.players.length}
