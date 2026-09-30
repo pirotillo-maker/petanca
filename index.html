@@ -4,137 +4,204 @@
 <section id="round" class="tab hidden"><div class="card"><div class="row"><button class="s" onclick="move(-1)">‹</button><h2 id="rt"></h2><button class="s" onclick="move(1)">›</button></div><div id="ri" class="muted"></div><div id="games"></div><button class="p" onclick="gen()">Sortear / generar ronda</button> <button class="s" onclick="saveR()">Guardar resultados</button></div></section>
 <section id="stand" class="tab hidden"><div class="card"><h2>Clasificación</h2><div id="st"></div></div></section></main>
 <script>
-const K='mele_petanca_v11';let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};const key=(a,b)=>[a,b].sort().join('|');const pts=p=>p.w+p.d*.5;
-function tab(x){document.querySelectorAll('.tab').forEach(e=>e.classList.add('hidden'));$(x).classList.remove('hidden');render()}function newC(){if(S.started&&!confirm('Se borrará el campeonato actual y su historial. ¿Continuar?'))return;S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:[],roundsData:[],started:false};vr=0;save();tab('players')}
-function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}function del(id){if(S.started)return;S.players=S.players.filter(p=>p.id!==id);save();render()}
-function sizes(n){
-  // Composición óptima de la Melé equilibrada.
-  // Prioridad absoluta: máximo número de 2x2; después mínimo de partidas con tripletas.
-  // Nadie descansa. 3x2 se usa antes que 3x3 cuando ambas opciones tienen el mismo número de 2x2/tripletas.
+const K='mele_petanca_v14';
+let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;
+const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));
+const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const key=(a,b)=>[a,b].sort().join('|');
+const pts=p=>p.w+p.d*.5;
+function tab(x){document.querySelectorAll('.tab').forEach(e=>e.classList.add('hidden'));$(x).classList.remove('hidden');render()}
+function newC(){if(S.started&&!confirm('Se borrará el campeonato actual y su historial. ¿Continuar?'))return;S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:[],roundsData:[],started:false};vr=0;save();tab('players')}
+function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}
+function del(id){if(S.started)return;S.players=S.players.filter(p=>p.id!==id);save();render()}
+
+/* ---------- MELÉ EQUILIBRADA: MOTOR NUEVO ----------
+   1) La composición se calcula matemáticamente antes del sorteo.
+   2) Primero se evita repetir compañeros.
+   3) Después se minimizan rivales repetidos.
+   4) Finalmente se minimizan antiguos compañeros que vuelven a ser rivales.
+   5) Si una condición es matemáticamente imposible, se relaja solo esa condición.
+*/
+function composition(n){
+  // Composición óptima: primero máximo de 2x2, después mínimo de partidas con tripletas.
+  // Un 1x1 solo puede aparecer una vez. Si está activado, se usa cuando mejora la composición.
   const memo=new Map();
   function better(a,b){
     if(!b)return true;
-    if(a.doubles!==b.doubles)return a.doubles>b.doubles;
-    if(a.tripGames!==b.tripGames)return a.tripGames<b.tripGames;
-    if(a.threeTwo!==b.threeTwo)return a.threeTwo>b.threeTwo;
-    if(a.ones!==b.ones)return a.ones<b.ones;
-    return a.games>b.games;
+    if(a.d!==b.d)return a.d>b.d;
+    if(a.t!==b.t)return a.t<b.t;
+    if(a.s32!==b.s32)return a.s32>b.s32;
+    if(a.one!==b.one)return a.one<b.one;
+    return a.g<b.g;
   }
-  function f(x){
-    if(x===0)return {sizes:[],doubles:0,tripGames:0,threeTwo:0,ones:0,games:0};
+  function f(x,usedOne){
+    const k=x+'|'+usedOne;if(memo.has(k))return memo.get(k);
+    if(x===0)return {types:[],d:0,t:0,s32:0,one:0,g:0};
     if(x<0)return null;
-    if(memo.has(x))return memo.get(x);
     let best=null;
-    // 2x2 siempre permitido. 3x2/3x3 solo si tripletas están permitidas.
-    const choices=[4];
-    if(S.tri) choices.push(5,6);
-    // 1x1 solo puede aparecer como partida independiente si está activado.
-    if(S.one) choices.push(2);
-    for(const z of choices){
-      // El 1x1 se reserva para cuadrar un remanente de 2; nunca se usa como primera elección.
-      if(z===2 && x!==2) continue;
-      const r=f(x-z); if(!r)continue;
-      const c={sizes:[z,...r.sizes],doubles:r.doubles+(z===4?1:0),tripGames:r.tripGames+(z===5||z===6?1:0),threeTwo:r.threeTwo+(z===5?1:0),ones:r.ones+(z===2?1:0),games:r.games+1};
+    for(const z of [4,5,6,2]){
+      if(z===2&&(!S.one||usedOne))continue;
+      const r=f(x-z,usedOne||z===2);if(!r)continue;
+      const c={types:[z,...r.types],d:r.d+(z===4),t:r.t+(z===5||z===6),s32:r.s32+(z===5),one:r.one+(z===2),g:r.g+1};
       if(better(c,best))best=c;
     }
-    memo.set(x,best); return best;
+    memo.set(k,best);return best;
   }
-  const r=f(n); return r?r.sizes:[];
+  const r=f(n,false);return r?r.types:null;
 }
-function part(ids){let ss=sizes(ids.length);if(!ss.length)return null;ids=sh(ids);let out=[],k=0;for(let n of ss){let g=ids.slice(k,k+n);k+=n;if(n===2)out.push({teams:[[g[0]],[g[1]]]});else if(n===4)out.push({teams:[[g[0],g[1]],[g[2],g[3]]]});else if(n===5){if(Math.random()<.5)out.push({teams:[[g[0],g[1],g[2]],[g[3],g[4]]]});else out.push({teams:[[g[0],g[1]],[g[2],g[3],g[4]]]})}else if(n===6){let a=sh(g);out.push({teams:[a.slice(0,3),a.slice(3,6)]})}}return {games:out}}
-function rel(){let tm=new Set(),rv=new Set(),ct={tm:new Map,rv:new Map};for(let r of S.roundsData)for(let g of r.games){for(let t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let k=key(t[i],t[j]);tm.add(k);ct.tm.set(k,(ct.tm.get(k)||0)+1)}if(g.teams.length>1)for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);rv.add(k);ct.rv.set(k,(ct.rv.get(k)||0)+1)}}return{tm,rv,ct}}
-function quality(gs,R){let q=Math.random()*2;for(let g of gs){for(let t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let k=key(t[i],t[j]);if(R.tm.has(k))q+=100000000;q+=(R.ct.tm.get(k)||0)*1000}if(g.teams.length>1)for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);if(R.tm.has(k))q+=100000000;if(R.rv.has(k))q+=10000000;q+=(R.ct.rv.get(k)||0)*1000}}return q}
-function canBeTeammates(group,R){
-  for(let i=0;i<group.length;i++)for(let j=i+1;j<group.length;j++)if(R.tm.has(key(group[i],group[j])))return false;
-  return true;
+function gameShape(z){return z===4?[2,2]:z===5?[3,2]:z===6?[3,3]:[1,1]}
+function relations(){
+  const tm=new Set(),rv=new Set(),ct={tm:new Map(),rv:new Map()};
+  for(const r of S.roundsData)for(const g of r.games){
+    for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+      const k=key(t[i],t[j]);tm.add(k);ct.tm.set(k,(ct.tm.get(k)||0)+1);
+    }
+    for(const a of g.teams[0])for(const b of g.teams[1]){
+      const k=key(a,b);rv.add(k);ct.rv.set(k,(ct.rv.get(k)||0)+1);
+    }
+  }
+  return {tm,rv,ct};
 }
-function canFace(a,b,R){
-  // En Melé equilibrada no se permite repetir rival ni enfrentar a un antiguo compañero
-  // mientras exista una solución alternativa.
-  for(let x of a)for(let y of b){let k=key(x,y);if(R.rv.has(k)||R.tm.has(k))return false;}
-  return true;
+function roundCost(order,types,R,mode,pm){
+  let tm=0,rv=0,old=0,sw=0,maxGap=0,k=0;
+  for(const z of types){
+    const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
+    for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+      const q=key(t[i],t[j]);if(R.tm.has(q))tm++;
+      if(mode==='swiss'){const d=Math.abs(pm.get(t[i]).w-pm.get(t[j]).w);sw+=d;maxGap=Math.max(maxGap,d)}
+    }
+    for(const a of A)for(const b of B){
+      const q=key(a,b);if(R.rv.has(q))rv++;if(R.tm.has(q))old++;
+      if(mode==='swiss'){const d=Math.abs(pm.get(a).w-pm.get(b).w);sw+=d*2;maxGap=Math.max(maxGap,d)}
+    }
+  }
+  return mode==='swiss'?[maxGap,sw,tm,rv,old]:[tm,rv,old];
 }
-function buildTeams(ids,ss,R){
-  let remaining=sh(ids),teams=[];
-  // Construcción global: primero grupos grandes, escogiendo compañeros sin repetir.
-  ss=[...ss].sort((a,b)=>b-a);
-  for(let size of ss){
-    let best=null,bscore=Infinity;
-    const trials=Math.min(900,Math.max(120,remaining.length*12));
-    for(let q=0;q<trials;q++){
-      let cand=sh(remaining).slice(0,size);
-      if(cand.length<size||!canBeTeammates(cand,R))continue;
-      let sc=Math.random()*30;
-      for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
-        let k=key(cand[i],cand[j]); sc+=(R.ct.tm.get(k)||0)*10000;
+function lexBetter(a,b){
+  if(!b)return true;for(let i=0;i<a.length;i++){if(a[i]!==b[i])return a[i]<b[i]}return false;
+}
+function optimizeOrder(ids,types,R,mode,pm){
+  let best=null,bestOrder=null;
+  const n=ids.length;
+  const attempts=n<=20?700:n<=40?500:n<=60?320:220;
+  const passes=n<=30?18:12;
+  for(let t=0;t<attempts;t++){
+    let order=sh(ids),score=roundCost(order,types,R,mode,pm);
+    for(let pass=0;pass<passes;pass++){
+      let improved=false;
+      const tries=Math.min(n*3,180);
+      for(let z=0;z<tries;z++){
+        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+        [order[i],order[j]]=[order[j],order[i]];
+        const ns=roundCost(order,types,R,mode,pm);
+        if(lexBetter(ns,score)){score=ns;improved=true}else [order[i],order[j]]=[order[j],order[i]];
       }
-      if(sc<bscore){bscore=sc;best=cand;}
+      if(!improved)break;
     }
-    if(!best)return null;
-    teams.push(best);let used=new Set(best);remaining=remaining.filter(x=>!used.has(x));
+    if(lexBetter(score,best)){best=score;bestOrder=order.slice()}
+    if(mode==='balanced'&&best[0]===0&&best[1]===0&&best[2]===0)break;
+    if(mode==='swiss'&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
   }
-  return teams;
-}
-function pairTeams(teams,R){
-  // Emparejamiento global de equipos. Primero intenta cumplir las tres reglas duras.
-  if(teams.length%2)return null;
-  const n=teams.length;
-  let order=teams.map((_,i)=>i);
-  let best=null,bestCost=Infinity;
-  function rec(left,pairs,cost){
-    if(!left.length){if(cost<bestCost){best=pairs.slice();bestCost=cost;}return;}
-    if(bestCost===0)return;
-    let ai=left[Math.floor(Math.random()*left.length)];
-    let rest=left.filter(x=>x!==ai);
-    let cand=rest.map(b=>{
-      let hard=!canFace(teams[ai],teams[b],R), c=hard?1e9:0;
-      if(!hard){for(let x of teams[ai])for(let y of teams[b]){let k=key(x,y);c+=(R.ct.rv.get(k)||0)*10000+(R.ct.tm.get(k)||0)*100000;}}
-      return {b,c};
-    }).sort((u,v)=>u.c-v.c || Math.random()-.5);
-    // Prioridad absoluta: si existe algún emparejamiento sin conflictos, no se consideran los conflictivos.
-    for(let z of cand){
-      if(z.c>=1e9)continue;
-      if(cand.length>0 && z.c>bestCost && bestCost===0)continue;
-      let nl=rest.filter(x=>x!==z.b);
-      rec(nl,pairs.concat([[ai,z.b]]),cost+z.c);
-      if(bestCost===0)return;
-    }
-  }
-  rec(order,[],0);
-  if(!best)return null;
-  return best.map(([a,b])=>({teams:[teams[a],teams[b]]}));
+  if(!bestOrder)return null;
+  let k=0,games=[];
+  for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z}
+  return {games,score:best};
 }
 function balanced(ids){
-  if(!S.roundsData.length)return part(ids);
-  const R=rel();
-  const ss=sizes(ids.length); if(!ss.length)return null;
-  // La composición ya está optimizada por sizes(): máximo 2x2, después mínimo de tripletas.
-  // Para cada composición, se construyen primero los equipos y después se resuelve globalmente
-  // el emparejamiento de rivales. Se descarta cualquier ronda que repita compañero/rival o
-  // enfrente a antiguos compañeros, mientras exista una solución sin esos conflictos.
-  let fallback=null, fallbackCost=Infinity;
-  const tries=Math.min(5000,Math.max(300,ids.length*100));
-  for(let i=0;i<tries;i++){
-    let teams=buildTeams(ids,ss,R); if(!teams)continue;
-    let games=pairTeams(teams,R); if(!games)continue;
-    let hard=0,cost=0;
-    for(let g of games){
-      for(let t of g.teams)for(let a=0;a<t.length;a++)for(let b=a+1;b<t.length;b++){
-        let k=key(t[a],t[b]);if(R.tm.has(k))hard++;cost+=R.ct.tm.get(k)||0;
-      }
-      for(let a of g.teams[0])for(let b of g.teams[1]){let k=key(a,b);if(R.rv.has(k))hard++;if(R.tm.has(k))hard+=10;cost+=(R.ct.rv.get(k)||0)*10+(R.ct.tm.get(k)||0)*100;}
-    }
-    let total=hard*100000000+cost*1000+Math.random()*10;
-    if(total<fallbackCost){fallbackCost=total;fallback= {games};}
-    if(hard===0)return {games};
-  }
-  return fallback;
+  const types=composition(ids.length);if(!types)return null;
+  const R=relations(),x=optimizeOrder(ids,types,R,'balanced',null);return x?{games:x.games}:null;
 }
-function swiss(ids){let pm=new Map(S.players.map(p=>[p.id,p])),R=rel(),groups=new Map();for(let id of ids){let score=pts(pm.get(id));if(!groups.has(score))groups.set(score,[]);groups.get(score).push(id)}let ordered=[...groups.keys()].sort((a,b)=>b-a).flatMap(sc=>sh(groups.get(sc)));let best=null,bv=Infinity;for(let i=0;i<Math.min(8000,Math.max(1200,ids.length*180));i++){let g=part(ordered);if(g){let q=quality(g.games,R);for(let game of g.games){let scores=game.teams.map(t=>t.reduce((z,id)=>z+pts(pm.get(id)),0)/t.length);q+=Math.abs(scores[0]-scores[1])*4000}if(q<bv){bv=q;best=g}}}return best}
-function complete(r){return r&&r.games.length&&r.games.every(g=>g.result&&g.result.a!=null&&g.result.b!=null)}function valid(g){let s=new Set;for(let x of g.games){if(x.teams.length!==2)return false;let a=x.teams[0].length,b=x.teams[1].length;if(!((a===1&&b===1)||(a===2&&b===2)||(a===3&&b===3)||(a===3&&b===2)||(a===2&&b===3)))return false;for(let t of x.teams)for(let id of t){if(s.has(id))return false;s.add(id)}}return s.size===S.players.length}
-function gen(){if(S.players.length<2)return alert('Añade al menos 2 jugadores.');if(S.roundsData.length>=S.rounds)return alert('Ya están todas las rondas.');if(S.roundsData.length&&!complete(S.roundsData.at(-1)))return alert('Completa y guarda la ronda anterior.');let ids=S.players.map(p=>p.id),g=S.sys==='swiss'&&S.roundsData.length?swiss(ids):balanced(ids);if(!g||!valid(g))return alert('No se ha podido formar una ronda válida.');let n=S.roundsData.length+1;S.roundsData.push({number:n,games:g.games.map((x,i)=>({...x,court:i%S.courts+1,result:null}))});S.started=true;vr=S.roundsData.length-1;save();tab('round')}
-function saveR(){let r=S.roundsData[vr];if(!r)return;document.querySelectorAll('[data-score]').forEach(i=>{let[g,s]=i.dataset.score.split('-');r.games[+g].result=r.games[+g].result||{};r.games[+g].result[s]=i.value===''?null:+i.value});if(!complete(r))return alert('Completa todos los resultados.');S.players.forEach(p=>Object.assign(p,{w:0,d:0,l:0,pf:0,pc:0}));for(let rr of S.roundsData)if(complete(rr))for(let g of rr.games){let a=+g.result.a,b=+g.result.b;g.teams[0].forEach(id=>{let p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b});g.teams[1].forEach(id=>{let p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a});if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}else if(b>a){g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}else g.teams.flat().forEach(id=>S.players.find(x=>x.id===id).d++)}save();render();alert('Resultados guardados.')}
+function swiss(ids){
+  const pm=new Map(S.players.map(p=>[p.id,p])),types=composition(ids.length);if(!types)return null;
+  const R=relations(),x=optimizeOrder(ids,types,R,'swiss',pm);return x?{games:x.games}:null;
+}
+function firstSwiss(ids){const types=composition(ids.length);if(!types)return null;const order=sh(ids);let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z}return {games};}
+
+// Último recurso: si el optimizador no devuelve una combinación válida
+// por un estado inesperado del navegador, siempre podemos formar una ronda
+// válida respetando la composición matemática. Esto evita que el campeonato
+// se bloquee entre rondas.
+function fallbackRound(ids){
+  const types=composition(ids.length);if(!types)return null;
+  const order=sh(ids);let k=0,games=[];
+  for(const z of types){
+    const [as,bs]=gameShape(z);
+    games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});
+    k+=z;
+  }
+  return {games};
+}
+function complete(r){return r&&r.games.length&&r.games.every(g=>g.result&&g.result.a!=null&&g.result.b!=null)}
+function valid(g){
+  const s=new Set();
+  for(const x of g.games){
+    if(x.teams.length!==2)return false;
+    const a=x.teams[0].length,b=x.teams[1].length;
+    if(!((a===1&&b===1)||(a===2&&b===2)||(a===3&&b===3)||(a===3&&b===2)||(a===2&&b===3)))return false;
+    for(const t of x.teams)for(const id of t){if(s.has(id))return false;s.add(id)}
+  }
+  return s.size===S.players.length;
+}
+function gen(){
+  if(S.players.length<2)return alert('Añade al menos 2 jugadores.');
+  if(S.roundsData.length>=S.rounds)return alert('Ya están todas las rondas.');
+  if(S.roundsData.length&&!complete(S.roundsData.at(-1)))return alert('Completa y guarda la ronda anterior.');
+
+  // El navegador puede conservar datos antiguos en localStorage.
+  // La ronda nueva siempre se construye usando únicamente los jugadores
+  // actuales y un historial saneado de rondas ya guardadas.
+  const ids=S.players.map(p=>p.id);
+  const unique=new Set(ids);
+  if(unique.size!==ids.length)return alert('Hay jugadores con identificadores duplicados. Crea de nuevo el campeonato.');
+
+  const oldRounds=S.roundsData;
+  S.roundsData=oldRounds.filter(r=>r&&Array.isArray(r.games)&&r.games.every(g=>g&&Array.isArray(g.teams)&&g.teams.length===2));
+
+  let g;
+  try{
+    g=S.sys==='swiss'&&!S.roundsData.length?firstSwiss(ids):S.sys==='swiss'?swiss(ids):balanced(ids);
+  }catch(e){
+    console.error('Error generando ronda:',e);
+    S.roundsData=oldRounds;
+    return alert('Se ha producido un error al generar la ronda.');
+  }
+  S.roundsData=oldRounds;
+
+  // Si el optimizador falla, usamos una distribución de respaldo válida.
+  // Así nunca se bloquea una segunda o tercera ronda por una búsqueda aleatoria.
+  if(!g||!valid(g))g=fallbackRound(ids);
+  if(!g||!valid(g))return alert('No se ha podido formar una ronda válida con las opciones actuales.');
+  const n=S.roundsData.length+1;
+  S.roundsData.push({number:n,games:g.games.map((x,i)=>({...x,court:i%Math.max(1,S.courts)+1,result:null}))});
+  S.started=true;vr=S.roundsData.length-1;save();tab('round');
+}
+function saveR(){
+  const r=S.roundsData[vr];if(!r)return;
+  document.querySelectorAll('[data-score]').forEach(i=>{const[g,s]=i.dataset.score.split('-');r.games[+g].result=r.games[+g].result||{};r.games[+g].result[s]=i.value===''?null:+i.value});
+  if(!complete(r))return alert('Completa todos los resultados.');
+  S.players.forEach(p=>Object.assign(p,{w:0,d:0,l:0,pf:0,pc:0}));
+  for(const rr of S.roundsData)if(complete(rr))for(const g of rr.games){
+    const a=+g.result.a,b=+g.result.b;
+    g.teams[0].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b});
+    g.teams[1].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a});
+    if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}
+    else if(b>a){g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}
+    else g.teams.flat().forEach(id=>S.players.find(x=>x.id===id).d++);
+  }
+  save();render();alert('Resultados guardados.');
+}
 function move(d){if(S.roundsData.length){vr=Math.max(0,Math.min(S.roundsData.length-1,vr+d));tab('round')}}
-function render(){ $('cn').value=S.name||'';$('nr').value=S.rounds;$('nc').value=S.courts;$('tri').checked=S.tri;$('one').checked=S.one;document.querySelectorAll('input[name=sys]').forEach(x=>x.checked=x.value===S.sys);$('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';$('pl').innerHTML=S.players.length?S.players.map((p,i)=>`<div class="player"><span><b>${i+1}.</b> ${esc(p.name)}</span>${!S.started?`<button class="d" onclick="del('${p.id}')">Eliminar</button>`:''}</div>`).join(''):'<p class="muted">No hay jugadores.</p>';let r=S.roundsData[vr];$('rt').textContent=r?`Ronda ${r.number} / ${S.rounds}`:'Sin ronda';$('ri').textContent=r?(complete(r)?'Resultados guardados':'Pendiente de resultados'):'Genera la primera ronda.';$('games').innerHTML=r?r.games.map((g,i)=>{let a=g.teams[0].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + '),b=g.teams[1].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + ');return `<div class="game"><b>Pista ${g.court} · Partida ${i+1}</b><div class="team">${esc(a)} <input class="score" type="number" min="0" data-score="${i}-a" value="${g.result?.a??''}"></div><div style="text-align:center">VS</div><div class="team">${esc(b)} <input class="score" type="number" min="0" data-score="${i}-b" value="${g.result?.b??''}"></div></div>`}).join('') : '';let a=[...S.players].sort((x,y)=>pts(y)-pts(x)||(y.pf-y.pc)-(x.pf-x.pc));let hist=a.map(p=>{let cells=[];for(let ri=0;ri<S.roundsData.length;ri++){let rr=S.roundsData[ri],g=rr?.games.find(g=>g.teams.flat().includes(p.id));if(!g){cells.push('—');continue}let my=g.teams.find(t=>t.includes(p.id)),op=g.teams.find(t=>!t.includes(p.id));let partner=my.filter(id=>id!==p.id).map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ')||'Individual';let opponents=op.map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ');let res=g.result&&g.result.a!=null?(my===g.teams[0]?`${g.result.a}-${g.result.b}`:`${g.result.b}-${g.result.a}`):'sin resultado';cells.push(`${esc(partner)} · vs ${esc(opponents)} · ${res}`)}return `<tr><td>${esc(p.name)}</td>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`}).join('');$('st').innerHTML=a.length?`<table><tr><th># Jugador</th><th>Pts</th><th>G</th><th>E</th><th>P</th><th>PF</th><th>PC</th><th>Dif.</th></tr>${a.map((p,i)=>`<tr><td>${i+1}. ${esc(p.name)}</td><td><b>${pts(p)}</b></td><td>${p.w}</td><td>${p.d}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pc}</td><td>${p.pf-p.pc}</td></tr>`).join('')}</table><h3>Histórico de partidas</h3><div style="overflow:auto"><table><tr><th>Jugador</th>${S.roundsData.map(r=>`<th>R${r.number}</th>`).join('')}</tr>${hist}</table></div>`:'Sin jugadores.'}
+function render(){
+  $('cn').value=S.name||'';$('nr').value=S.rounds;$('nc').value=S.courts;$('tri').checked=S.tri;$('one').checked=S.one;
+  document.querySelectorAll('input[name=sys]').forEach(x=>x.checked=x.value===S.sys);
+  $('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';
+  $('pl').innerHTML=S.players.length?S.players.map((p,i)=>`<div class="player"><span><b>${i+1}.</b> ${esc(p.name)}</span>${!S.started?`<button class="d" onclick="del('${p.id}')">Eliminar</button>`:''}</div>`).join(''):'<p class="muted">No hay jugadores.</p>';
+  const r=S.roundsData[vr];$('rt').textContent=r?`Ronda ${r.number} / ${S.rounds}`:'Sin ronda';$('ri').textContent=r?(complete(r)?'Resultados guardados':'Pendiente de resultados'):'Genera la primera ronda.';
+  $('games').innerHTML=r?r.games.map((g,i)=>{const a=g.teams[0].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + '),b=g.teams[1].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + ');return `<div class="game"><b>Pista ${g.court} · Partida ${i+1}</b><div class="team">${esc(a)} <input class="score" type="number" min="0" data-score="${i}-a" value="${g.result?.a??''}"></div><div style="text-align:center">VS</div><div class="team">${esc(b)} <input class="score" type="number" min="0" data-score="${i}-b" value="${g.result?.b??''}"></div></div>`}).join(''):'';
+  const a=[...S.players].sort((x,y)=>pts(y)-pts(x)||(y.pf-y.pc)-(x.pf-x.pc));
+  const hist=a.map(p=>{const cells=[];for(let ri=0;ri<S.roundsData.length;ri++){const rr=S.roundsData[ri],g=rr?.games.find(g=>g.teams.flat().includes(p.id));if(!g){cells.push('—');continue}const my=g.teams.find(t=>t.includes(p.id)),op=g.teams.find(t=>!t.includes(p.id));const partner=my.filter(id=>id!==p.id).map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ')||'Individual';const opponents=op.map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ');const res=g.result&&g.result.a!=null?(my===g.teams[0]?`${g.result.a}-${g.result.b}`:`${g.result.b}-${g.result.a}`):'sin resultado';cells.push(`${esc(partner)} · vs ${esc(opponents)} · ${res}`)}return `<tr><td>${esc(p.name)}</td>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`}).join('');
+  $('st').innerHTML=a.length?`<table><tr><th># Jugador</th><th>Pts</th><th>G</th><th>E</th><th>P</th><th>PF</th><th>PC</th><th>Dif.</th></tr>${a.map((p,i)=>`<tr><td>${i+1}. ${esc(p.name)}</td><td><b>${pts(p)}</b></td><td>${p.w}</td><td>${p.d}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pc}</td><td>${p.pf-p.pc}</td></tr>`).join('')}</table><h3>Histórico de partidas</h3><div style="overflow:auto"><table><tr><th>Jugador</th>${S.roundsData.map(r=>`<th>R${r.number}</th>`).join('')}</tr>${hist}</table></div>`:'Sin jugadores.';
+}
 render();tab('config');
 </script></body></html>
