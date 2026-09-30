@@ -76,7 +76,7 @@ function roundCost(order,types,R,mode,pm){
       if(mode==='swiss'){const d=Math.abs(pm.get(a).w-pm.get(b).w);sw+=d*2;maxGap=Math.max(maxGap,d)}
     }
   }
-  return mode==='swiss'?[maxGap,sw,tm,rv,old]:[tm,rv,old];
+  return mode==='swiss'?[maxGap,sw,tm,rv,old]:[tm,old,rv];
 }
 function lexBetter(a,b){
   if(!b)return true;for(let i=0;i<a.length;i++){if(a[i]!==b[i])return a[i]<b[i]}return false;
