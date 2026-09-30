@@ -86,37 +86,109 @@ function perfectBalanced(s){return s&&s[0]===0&&s[1]===0&&s[2]===0}
 function optimizeOrder(ids,types,R,mode,pm){
   let best=null,bestOrder=null;
   const n=ids.length;
-  // Para la melé equilibrada damos muchas más oportunidades a la búsqueda y
-  // hacemos pequeños "reinicios" cuando una permutación queda atrapada.
-  const attempts=mode==='balanced'?(n<=20?2200:n<=40?3500:n<=60?2600:1800):(n<=20?900:n<=40?1400:n<=60?1000:700);
-  const passes=mode==='balanced'?(n<=30?24:18):(n<=30?16:12);
-  const tries=Math.min(n*5,260);
-  for(let t=0;t<attempts;t++){
-    let order=sh(ids),score=roundCost(order,types,R,mode,pm);
-    for(let pass=0;pass<passes;pass++){
-      let improved=false;
-      for(let z=0;z<tries;z++){
-        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+
+  // Búsqueda por reinicios + mejora local. En la melé equilibrada se hace
+  // además una reparación dirigida de conflictos: permite movimientos que
+  // temporalmente empeoran otra métrica para escapar de mínimos locales y
+  // vuelve a optimizar después. La prioridad final sigue siendo estricta:
+  // compañeros repetidos > antiguos compañeros como rivales > rivales repetidos.
+  const attempts=mode==='balanced'?(n<=13?1500:n<=20?700:n<=40?2600:n<=60?2200:1500):(n<=20?900:n<=40?1400:n<=60?1000:700);
+  const passes=mode==='balanced'?(n<=13?16:n<=20?10:n<=30?14:14):(n<=30?16:12);
+
+  function scoreValue(s){
+    if(mode==='swiss')return s[0]*1000000+s[1]*1000+s[2]*100+s[3]*10+s[4];
+    return s[0]*1000000+s[1]*1000+s[2];
+  }
+  function improve(order,score){
+    let changed=true,rounds=0;
+    while(changed&&rounds<passes){
+      changed=false;rounds++;
+      // Mezcla de búsqueda aleatoria y exhaustiva de pares. La exhaustiva se
+      // activa cuando quedan conflictos históricos, donde es más útil.
+      const exhaustive=mode==='balanced'&&(score[1]>0||score[2]>0);
+      let candidates=[];
+      if(exhaustive){
+        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)candidates.push([i,j]);
+        for(let i=candidates.length-1;i;i--){const j=Math.floor(Math.random()*(i+1));[candidates[i],candidates[j]]=[candidates[j],candidates[i]]}
+      }else{
+        const tries=Math.min(n*4,180);
+        for(let z=0;z<tries;z++){const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i!==j)candidates.push([i,j])}
+      }
+      let localBest=score,li=-1,lj=-1;
+      for(const [i,j] of candidates){
         [order[i],order[j]]=[order[j],order[i]];
         const ns=roundCost(order,types,R,mode,pm);
-        if(lexBetter(ns,score)){score=ns;improved=true}else [order[i],order[j]]=[order[j],order[i]];
+        if(lexBetter(ns,localBest)){localBest=ns;li=i;lj=j}
+        [order[i],order[j]]=[order[j],order[i]];
       }
-      if(perfectBalanced(score)&&mode==='balanced')break;
-      if(!improved)break;
+      if(li>=0){[order[li],order[lj]]=[order[lj],order[li]];score=localBest;changed=true}
+      if(mode==='balanced'&&perfectBalanced(score))break;
     }
+    return score;
+  }
+
+  for(let t=0;t<attempts;t++){
+    let order=sh(ids),score=roundCost(order,types,R,mode,pm);
+    score=improve(order,score);
     if(lexBetter(score,best)){best=score;bestOrder=order.slice()}
     if(mode==='balanced'&&perfectBalanced(best))break;
-    if(mode==='swiss'&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
+
+    // Reparación dirigida: si no hay solución perfecta todavía, hacemos una
+    // pequeña perturbación y volvemos a optimizar. Esto permite atravesar un
+    // valle en el que eliminar un antiguo compañero exige empeorar durante
+    // un instante otra relación.
+    if(mode==='balanced'&&(best[1]>0||best[2]>0)){
+      for(let kick=0;kick<(n<=13?5:3);kick++){
+        const q=order.slice();
+        const swaps=2+(Math.random()<.45?1:0);
+        for(let z=0;z<swaps;z++){
+          const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
+          if(i!==j)[q[i],q[j]]=[q[j],q[i]];
+        }
+        let qs=roundCost(q,types,R,mode,pm);
+        // Durante el escape permitimos una pequeña regresión temporal de la
+        // métrica secundaria; después la búsqueda local vuelve a imponer la
+        // prioridad lexicográfica y conserva solo la mejora final.
+        for(let z=0;z<Math.min(n<=13?70:40,n*n);z++){
+          const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+          [q[i],q[j]]=[q[j],q[i]];
+          const ns=roundCost(q,types,R,mode,pm);
+          const cur=scoreValue(qs),nv=scoreValue(ns);
+          const temp=Math.max(2,80*(1-z/Math.min(n<=13?70:40,n*n)));
+          if(nv<cur || Math.random()<Math.exp((cur-nv)/temp)){qs=ns}else [q[i],q[j]]=[q[j],q[i]];
+        }
+        qs=improve(q,qs);
+        if(lexBetter(qs,best)){best=qs;bestOrder=q.slice()}
+        if(perfectBalanced(best))break;
+      }
+    }
+    if(mode==='balanced'&&perfectBalanced(best))break;
+    if(mode==='swiss'&&best&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
   }
+
   if(!bestOrder)return null;
   let k=0,games=[];
   for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z}
   return {games,score:best};
 }
 
+function smallBalancedTemplate(ids){
+  const n=ids.length, templates={
+    11:[[[[9,3],[0,1,2]],[[10,6],[4,5]],[[7],[8]]],[[[8,7],[3,0,5]],[[1,6],[9,4]],[[10],[2]]],[[[1,4],[3,10,8]],[[9,6],[0,7]],[[5],[2]]],[[[5,9],[10,1,7]],[[6,0],[4,8]],[[3],[2]]]],
+    12:[[[[8,7],[11,6]],[[1,0],[3,4]],[[2,9],[5,10]]],[[[11,5],[1,4]],[[10,2],[7,3]],[[8,6],[0,9]]],[[[3,1],[9,8]],[[0,6],[5,2]],[[7,10],[4,11]]],[[[5,0],[3,8]],[[9,6],[10,4]],[[1,11],[2,7]]]],
+    13:[[[[12,2],[5,10,1]],[[11,3],[9,0]],[[6,8],[4,7]]],[[[4,1],[12,3,8]],[[9,11],[5,7]],[[10,2],[0,6]]],[[[4,11],[5,8,0]],[[10,9],[7,12]],[[2,3],[1,6]]],[[[5,12],[4,9,6]],[[2,11],[1,8]],[[3,7],[0,10]]]]
+  };
+  if(!templates[n]||S.roundsData.length>=4)return null;
+  if(!S._smallMap||S._smallMap.length!==n||S._smallMap.some(x=>!ids.includes(x)))S._smallMap=sh(ids);
+  const map=S._smallMap, data=templates[n][S.roundsData.length];
+  return {games:data.map(g=>({teams:g.map(t=>t.map(i=>map[i]))}))};
+}
+
 function balanced(ids){
   const types=composition(ids.length);if(!types)return null;
-  const R=relations(),x=optimizeOrder(ids,types,R,'balanced',null);return x?{games:x.games}:null;
+  const templ=smallBalancedTemplate(ids);if(templ)return templ;
+  const R=relations();
+  const x=optimizeOrder(ids,types,R,'balanced',null);return x?{games:x.games}:null;
 }
 function swiss(ids){
   const pm=new Map(S.players.map(p=>[p.id,p])),types=composition(ids.length);if(!types)return null;
