@@ -67,16 +67,22 @@ function roundCost(order,types,R,mode,pm){
   let tm=0,rv=0,old=0,sw=0,maxGap=0,k=0;
   for(const z of types){
     const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
+    // En la melé equilibrada, una pareja que ya haya coincidido de cualquier
+    // forma queda bloqueada para volver a ser compañeros. Esto evita también
+    // que dos antiguos rivales se conviertan posteriormente en compañeros.
     for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
-      const q=key(t[i],t[j]);if(R.tm.has(q))tm++;
+      const q=key(t[i],t[j]);
+      if(R.tm.has(q)||R.rv.has(q))tm++;
       if(mode==='swiss'){const d=Math.abs(pm.get(t[i]).w-pm.get(t[j]).w);sw+=d;maxGap=Math.max(maxGap,d)}
     }
+    // Y un antiguo compañero tampoco puede convertirse en rival.
     for(const a of A)for(const b of B){
       const q=key(a,b);if(R.rv.has(q))rv++;if(R.tm.has(q))old++;
       if(mode==='swiss'){const d=Math.abs(pm.get(a).w-pm.get(b).w);sw+=d*2;maxGap=Math.max(maxGap,d)}
     }
   }
-  // En la melé equilibrada: compañero > antiguo compañero como rival > rival repetido.
+  // Equilibrada: bloqueo de cualquier relación previa > antiguo compañero
+  // como rival > rival repetido. En Swiss se mantiene su prioridad propia.
   return mode==='swiss'?[maxGap,sw,tm,old,rv]:[tm,old,rv];
 }
 function lexBetter(a,b){
@@ -181,12 +187,63 @@ function smallBalancedTemplate(ids){
   if(!templates[n]||S.roundsData.length>=4)return null;
   if(!S._smallMap||S._smallMap.length!==n||S._smallMap.some(x=>!ids.includes(x)))S._smallMap=sh(ids);
   const map=S._smallMap, data=templates[n][S.roundsData.length];
-  return {games:data.map(g=>({teams:g.map(t=>t.map(i=>map[i]))}))};
+  const games=data.map(g=>({teams:g.map(t=>t.map(i=>map[i]))}));
+  const order=[];for(const g of games){order.push(...g.teams[0],...g.teams[1]);}
+  const R=relations(),score=roundCost(order,composition(n),R,'balanced',null);
+  if(!perfectBalanced(score))return null;
+  return {games};
+}
+
+function strictGroupCost(order,types,R){
+  let blocked=0,repeatRival=0,k=0;
+  for(const z of types){
+    const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
+    for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+      const q=key(t[i],t[j]);
+      if(R.tm.has(q)||R.rv.has(q))blocked++;
+    }
+    for(const a of A)for(const b of B){
+      const q=key(a,b);
+      if(R.tm.has(q)||R.rv.has(q)){
+        if(R.tm.has(q))blocked++;
+        else repeatRival++;
+      }
+    }
+  }
+  return blocked*100000+repeatRival;
+}
+function strictSmallBalanced(ids){
+  const n=ids.length,types=composition(n);
+  if(!types||n<14||n>27)return null;
+  const R=relations();
+  let best=Infinity,bestOrder=null;
+  const attempts=n<=16?220:n<=20?320:420;
+  const steps=n<=16?3000:2500;
+  for(let a=0;a<attempts;a++){
+    let order=sh(ids),score=strictGroupCost(order,types,R);
+    let temp=Math.max(2,Math.ceil(n/3));
+    for(let step=0;step<steps;step++){
+      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+      [order[i],order[j]]=[order[j],order[i]];
+      const ns=strictGroupCost(order,types,R),delta=ns-score;
+      if(delta<=0 || Math.random()<Math.exp(-delta/temp))score=ns;
+      else [order[i],order[j]]=[order[j],order[i]];
+      temp*=0.9985;
+      if(score<best){best=score;bestOrder=order.slice();}
+      if(best===0)break;
+    }
+    if(best===0)break;
+  }
+  if(best!==0)return null;
+  let k=0,games=[];
+  for(const z of types){const [as,bs]=gameShape(z),g=bestOrder.slice(k,k+z);k+=z;games.push({teams:[g.slice(0,as),g.slice(as,as+bs)]});}
+  return {games};
 }
 
 function balanced(ids){
   const types=composition(ids.length);if(!types)return null;
   const templ=smallBalancedTemplate(ids);if(templ)return templ;
+  const strict=strictSmallBalanced(ids);if(strict)return strict;
   const R=relations();
   const x=optimizeOrder(ids,types,R,'balanced',null);return x?{games:x.games}:null;
 }
