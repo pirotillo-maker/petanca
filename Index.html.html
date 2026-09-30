@@ -1,0 +1,219 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#176b4d"><link rel="manifest" href="manifest.json"><title>Melé de Petanca v15</title><style>body{font-family:Arial,sans-serif;margin:0;background:#f3f5f4;color:#17231f}header{background:#176b4d;color:#fff;padding:18px}nav{display:flex;gap:6px;overflow:auto;background:#fff;padding:8px}button{padding:10px 14px;border:0;border-radius:10px;font-weight:bold}.p{background:#176b4d;color:#fff}.s{background:#e8eeeb}.d{background:#fbe8e8;color:#9b2424}main{max-width:900px;margin:auto;padding:14px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px #0001}input,select{padding:10px;border:1px solid #ccd5d1;border-radius:9px;font-size:16px;max-width:100%}.choice{display:block;padding:12px;border:2px solid #ddd;border-radius:12px;margin:8px 0}.choice:has(input:checked){border-color:#176b4d;background:#f0f8f4}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.player{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #eee}.game{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0}.team{background:#f5f7f6;padding:9px;margin:6px 0;border-radius:8px}.score{width:70px}.hidden{display:none}.note{padding:11px;background:#eef7f2;border-radius:10px;margin:10px 0}table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #ddd;text-align:center}td:first-child,th:first-child{text-align:left}.muted{color:#68756f}</style></head><body><header><h1>🎯 Melé de Petanca</h1><small>Melé equilibrada · Sistema suizo internacional</small></header><nav><button onclick="tab('config')">Configuración</button><button onclick="tab('players')">Jugadores</button><button onclick="tab('round')">Ronda</button><button onclick="tab('stand')">Clasificación</button></nav><main>
+<section id="config" class="tab"><div class="card"><h2>Nuevo campeonato</h2><div class="note">El historial de compañeros y rivales es exclusivamente del campeonato actual. Al crear otro, empieza desde cero.</div><input id="cn" placeholder="Nombre del campeonato" style="width:100%"><h3>Tipo</h3><label class="choice"><input type="radio" name="sys" value="balanced" checked> <b>Melé equilibrada</b><br>No repite compañero ni contrincante cuando existe una combinación válida; además evita que antiguos compañeros sean rivales.</label><label class="choice"><input type="radio" name="sys" value="swiss"> <b>Sistema suizo internacional</b><br>Primera ronda aleatoria; después agrupa por puntuación acumulada.</label><div class="row"><label>Rondas <select id="nr"><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label><label>Pistas <input id="nc" type="number" min="1" value="8"></label></div><label><input id="tri" type="checkbox" checked> Permitir tripletas</label><br><label><input id="one" type="checkbox" checked> Permitir 1 contra 1 con exactamente 2</label><br><button class="p" onclick="newC()">Crear / reiniciar campeonato</button></div><div class="card"><b>Actual:</b><div id="ci" class="muted"></div></div></section>
+<section id="players" class="tab hidden"><div class="card"><h2>Jugadores</h2><div class="row"><input id="pn" placeholder="Nombre"><button class="p" onclick="add()">Añadir</button></div><div id="pl"></div><p class="muted">Numeración automática.</p></div></section>
+<section id="round" class="tab hidden"><div class="card"><div class="row"><button class="s" onclick="move(-1)">‹</button><h2 id="rt"></h2><button class="s" onclick="move(1)">›</button></div><div id="ri" class="muted"></div><div id="games"></div><button class="p" onclick="gen()">Sortear / generar ronda</button> <button class="s" onclick="saveR()">Guardar resultados</button></div></section>
+<section id="stand" class="tab hidden"><div class="card"><h2>Clasificación</h2><div id="st"></div></div></section></main>
+<script>
+const K='mele_petanca_v14';
+let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;
+const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));
+const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const key=(a,b)=>[a,b].sort().join('|');
+const pts=p=>p.w+p.d*.5;
+function tab(x){document.querySelectorAll('.tab').forEach(e=>e.classList.add('hidden'));$(x).classList.remove('hidden');render()}
+function newC(){if(S.started&&!confirm('Se borrará el campeonato actual y su historial. ¿Continuar?'))return;S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:[],roundsData:[],started:false};vr=0;save();tab('players')}
+function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}
+function del(id){if(S.started)return;S.players=S.players.filter(p=>p.id!==id);save();render()}
+
+/* ---------- MELÉ EQUILIBRADA: MOTOR NUEVO ----------
+   1) La composición se calcula matemáticamente antes del sorteo.
+   2) Primero se evita repetir compañeros.
+   3) Después se minimizan rivales repetidos.
+   4) Finalmente se minimizan antiguos compañeros que vuelven a ser rivales.
+   5) Si una condición es matemáticamente imposible, se relaja solo esa condición.
+*/
+function composition(n){
+  // Composición óptima: primero máximo de 2x2, después mínimo de partidas con tripletas.
+  // Un 1x1 solo puede aparecer una vez. Si está activado, se usa cuando mejora la composición.
+  const memo=new Map();
+  function better(a,b){
+    if(!b)return true;
+    if(a.d!==b.d)return a.d>b.d;
+    if(a.t!==b.t)return a.t<b.t;
+    if(a.s32!==b.s32)return a.s32>b.s32;
+    if(a.one!==b.one)return a.one<b.one;
+    return a.g<b.g;
+  }
+  function f(x,usedOne){
+    const k=x+'|'+usedOne;if(memo.has(k))return memo.get(k);
+    if(x===0)return {types:[],d:0,t:0,s32:0,one:0,g:0};
+    if(x<0)return null;
+    let best=null;
+    for(const z of [4,5,6,2]){
+      if(z===2&&(!S.one||usedOne))continue;
+      const r=f(x-z,usedOne||z===2);if(!r)continue;
+      const c={types:[z,...r.types],d:r.d+(z===4),t:r.t+(z===5||z===6),s32:r.s32+(z===5),one:r.one+(z===2),g:r.g+1};
+      if(better(c,best))best=c;
+    }
+    memo.set(k,best);return best;
+  }
+  const r=f(n,false);return r?r.types:null;
+}
+function gameShape(z){return z===4?[2,2]:z===5?[3,2]:z===6?[3,3]:[1,1]}
+function relations(){
+  const tm=new Set(),rv=new Set(),ct={tm:new Map(),rv:new Map()};
+  for(const r of S.roundsData)for(const g of r.games){
+    for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+      const k=key(t[i],t[j]);tm.add(k);ct.tm.set(k,(ct.tm.get(k)||0)+1);
+    }
+    for(const a of g.teams[0])for(const b of g.teams[1]){
+      const k=key(a,b);rv.add(k);ct.rv.set(k,(ct.rv.get(k)||0)+1);
+    }
+  }
+  return {tm,rv,ct};
+}
+function roundCost(order,types,R,mode,pm){
+  let tm=0,rv=0,old=0,sw=0,maxGap=0,k=0;
+  for(const z of types){
+    const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
+    for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+      const q=key(t[i],t[j]);if(R.tm.has(q))tm++;
+      if(mode==='swiss'){const d=Math.abs(pm.get(t[i]).w-pm.get(t[j]).w);sw+=d;maxGap=Math.max(maxGap,d)}
+    }
+    for(const a of A)for(const b of B){
+      const q=key(a,b);if(R.rv.has(q))rv++;if(R.tm.has(q))old++;
+      if(mode==='swiss'){const d=Math.abs(pm.get(a).w-pm.get(b).w);sw+=d*2;maxGap=Math.max(maxGap,d)}
+    }
+  }
+  // En la melé equilibrada: compañero repetido es la prioridad absoluta;
+  // después se minimizan rivales repetidos y, como tercera prioridad,
+  // que un antiguo compañero vuelva a aparecer como rival.
+  // Esto ataca directamente los casos de contrincantes repetidos sin
+  // sacrificar la prohibición de repetir compañero.
+  return mode==='swiss'?[maxGap,sw,tm,rv,old]:[tm,rv,old];
+}
+function lexBetter(a,b){
+  if(!b)return true;for(let i=0;i<a.length;i++){if(a[i]!==b[i])return a[i]<b[i]}return false;
+}
+function perfectBalanced(s){return s&&s[0]===0&&s[1]===0&&s[2]===0}
+function optimizeOrder(ids,types,R,mode,pm){
+  let best=null,bestOrder=null;
+  const n=ids.length;
+  // Para la melé equilibrada damos muchas oportunidades a la búsqueda y
+  // hacemos pequeños reinicios cuando una permutación queda atrapada.
+  // El criterio final prioriza: compañero repetido -> rival repetido ->
+  // antiguo compañero convertido en rival.
+  const attempts=mode==='balanced'?(n<=20?2200:n<=40?3500:n<=60?2600:1800):(n<=20?900:n<=40?1400:n<=60?1000:700);
+  const passes=mode==='balanced'?(n<=30?24:18):(n<=30?16:12);
+  const tries=Math.min(n*5,260);
+  for(let t=0;t<attempts;t++){
+    let order=sh(ids),score=roundCost(order,types,R,mode,pm);
+    for(let pass=0;pass<passes;pass++){
+      let improved=false;
+      for(let z=0;z<tries;z++){
+        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+        [order[i],order[j]]=[order[j],order[i]];
+        const ns=roundCost(order,types,R,mode,pm);
+        if(lexBetter(ns,score)){score=ns;improved=true}else [order[i],order[j]]=[order[j],order[i]];
+      }
+      if(perfectBalanced(score)&&mode==='balanced')break;
+      if(!improved)break;
+    }
+    if(lexBetter(score,best)){best=score;bestOrder=order.slice()}
+    if(mode==='balanced'&&perfectBalanced(best))break;
+    if(mode==='swiss'&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
+  }
+  if(!bestOrder)return null;
+  let k=0,games=[];
+  for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z}
+  return {games,score:best};
+}
+
+function balanced(ids){
+  const types=composition(ids.length);if(!types)return null;
+  const R=relations(),x=optimizeOrder(ids,types,R,'balanced',null);return x?{games:x.games}:null;
+}
+function swiss(ids){
+  const pm=new Map(S.players.map(p=>[p.id,p])),types=composition(ids.length);if(!types)return null;
+  const R=relations(),x=optimizeOrder(ids,types,R,'swiss',pm);return x?{games:x.games}:null;
+}
+function firstSwiss(ids){const types=composition(ids.length);if(!types)return null;const order=sh(ids);let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z}return {games};}
+
+// Último recurso: si el optimizador no devuelve una combinación válida
+// por un estado inesperado del navegador, siempre podemos formar una ronda
+// válida respetando la composición matemática. Esto evita que el campeonato
+// se bloquee entre rondas.
+function fallbackRound(ids){
+  const types=composition(ids.length);if(!types)return null;
+  const order=sh(ids);let k=0,games=[];
+  for(const z of types){
+    const [as,bs]=gameShape(z);
+    games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});
+    k+=z;
+  }
+  return {games};
+}
+function complete(r){return r&&r.games.length&&r.games.every(g=>g.result&&g.result.a!=null&&g.result.b!=null)}
+function valid(g){
+  const s=new Set();
+  for(const x of g.games){
+    if(x.teams.length!==2)return false;
+    const a=x.teams[0].length,b=x.teams[1].length;
+    if(!((a===1&&b===1)||(a===2&&b===2)||(a===3&&b===3)||(a===3&&b===2)||(a===2&&b===3)))return false;
+    for(const t of x.teams)for(const id of t){if(s.has(id))return false;s.add(id)}
+  }
+  return s.size===S.players.length;
+}
+function gen(){
+  if(S.players.length<2)return alert('Añade al menos 2 jugadores.');
+  if(S.roundsData.length>=S.rounds)return alert('Ya están todas las rondas.');
+  if(S.roundsData.length&&!complete(S.roundsData.at(-1)))return alert('Completa y guarda la ronda anterior.');
+
+  // El navegador puede conservar datos antiguos en localStorage.
+  // La ronda nueva siempre se construye usando únicamente los jugadores
+  // actuales y un historial saneado de rondas ya guardadas.
+  const ids=S.players.map(p=>p.id);
+  const unique=new Set(ids);
+  if(unique.size!==ids.length)return alert('Hay jugadores con identificadores duplicados. Crea de nuevo el campeonato.');
+
+  const oldRounds=S.roundsData;
+  S.roundsData=oldRounds.filter(r=>r&&Array.isArray(r.games)&&r.games.every(g=>g&&Array.isArray(g.teams)&&g.teams.length===2));
+
+  let g;
+  try{
+    g=S.sys==='swiss'&&!S.roundsData.length?firstSwiss(ids):S.sys==='swiss'?swiss(ids):balanced(ids);
+  }catch(e){
+    console.error('Error generando ronda:',e);
+    S.roundsData=oldRounds;
+    return alert('Se ha producido un error al generar la ronda.');
+  }
+  S.roundsData=oldRounds;
+
+  // Si el optimizador falla, usamos una distribución de respaldo válida.
+  // Así nunca se bloquea una segunda o tercera ronda por una búsqueda aleatoria.
+  if(!g||!valid(g))g=fallbackRound(ids);
+  if(!g||!valid(g))return alert('No se ha podido formar una ronda válida con las opciones actuales.');
+  const n=S.roundsData.length+1;
+  S.roundsData.push({number:n,games:g.games.map((x,i)=>({...x,court:i%Math.max(1,S.courts)+1,result:null}))});
+  S.started=true;vr=S.roundsData.length-1;save();tab('round');
+}
+function saveR(){
+  const r=S.roundsData[vr];if(!r)return;
+  document.querySelectorAll('[data-score]').forEach(i=>{const[g,s]=i.dataset.score.split('-');r.games[+g].result=r.games[+g].result||{};r.games[+g].result[s]=i.value===''?null:+i.value});
+  if(!complete(r))return alert('Completa todos los resultados.');
+  S.players.forEach(p=>Object.assign(p,{w:0,d:0,l:0,pf:0,pc:0}));
+  for(const rr of S.roundsData)if(complete(rr))for(const g of rr.games){
+    const a=+g.result.a,b=+g.result.b;
+    g.teams[0].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b});
+    g.teams[1].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a});
+    if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}
+    else if(b>a){g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}
+    else g.teams.flat().forEach(id=>S.players.find(x=>x.id===id).d++);
+  }
+  save();render();alert('Resultados guardados.');
+}
+function move(d){if(S.roundsData.length){vr=Math.max(0,Math.min(S.roundsData.length-1,vr+d));tab('round')}}
+function render(){
+  $('cn').value=S.name||'';$('nr').value=S.rounds;$('nc').value=S.courts;$('tri').checked=S.tri;$('one').checked=S.one;
+  document.querySelectorAll('input[name=sys]').forEach(x=>x.checked=x.value===S.sys);
+  $('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';
+  $('pl').innerHTML=S.players.length?S.players.map((p,i)=>`<div class="player"><span><b>${i+1}.</b> ${esc(p.name)}</span>${!S.started?`<button class="d" onclick="del('${p.id}')">Eliminar</button>`:''}</div>`).join(''):'<p class="muted">No hay jugadores.</p>';
+  const r=S.roundsData[vr];$('rt').textContent=r?`Ronda ${r.number} / ${S.rounds}`:'Sin ronda';$('ri').textContent=r?(complete(r)?'Resultados guardados':'Pendiente de resultados'):'Genera la primera ronda.';
+  $('games').innerHTML=r?r.games.map((g,i)=>{const a=g.teams[0].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + '),b=g.teams[1].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + ');return `<div class="game"><b>Pista ${g.court} · Partida ${i+1}</b><div class="team">${esc(a)} <input class="score" type="number" min="0" data-score="${i}-a" value="${g.result?.a??''}"></div><div style="text-align:center">VS</div><div class="team">${esc(b)} <input class="score" type="number" min="0" data-score="${i}-b" value="${g.result?.b??''}"></div></div>`}).join(''):'';
+  const a=[...S.players].sort((x,y)=>pts(y)-pts(x)||(y.pf-y.pc)-(x.pf-x.pc));
+  const hist=a.map(p=>{const cells=[];for(let ri=0;ri<S.roundsData.length;ri++){const rr=S.roundsData[ri],g=rr?.games.find(g=>g.teams.flat().includes(p.id));if(!g){cells.push('—');continue}const my=g.teams.find(t=>t.includes(p.id)),op=g.teams.find(t=>!t.includes(p.id));const partner=my.filter(id=>id!==p.id).map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ')||'Individual';const opponents=op.map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ');const res=g.result&&g.result.a!=null?(my===g.teams[0]?`${g.result.a}-${g.result.b}`:`${g.result.b}-${g.result.a}`):'sin resultado';cells.push(`${esc(partner)} · vs ${esc(opponents)} · ${res}`)}return `<tr><td>${esc(p.name)}</td>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`}).join('');
+  $('st').innerHTML=a.length?`<table><tr><th># Jugador</th><th>Pts</th><th>G</th><th>E</th><th>P</th><th>PF</th><th>PC</th><th>Dif.</th></tr>${a.map((p,i)=>`<tr><td>${i+1}. ${esc(p.name)}</td><td><b>${pts(p)}</b></td><td>${p.w}</td><td>${p.d}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pc}</td><td>${p.pf-p.pc}</td></tr>`).join('')}</table><h3>Histórico de partidas</h3><div style="overflow:auto"><table><tr><th>Jugador</th>${S.roundsData.map(r=>`<th>R${r.number}</th>`).join('')}</tr>${hist}</table></div>`:'Sin jugadores.';
+}
+render();tab('config');
+</script></body></html>
