@@ -1,19 +1,50 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#176b4d"><link rel="manifest" href="manifest.json"><title>Melé de Petanca</title><style>body{font-family:Arial,sans-serif;margin:0;background:#f3f5f4;color:#17231f}header{background:#176b4d;color:#fff;padding:18px}nav{display:flex;gap:6px;overflow:auto;background:#fff;padding:8px}button{padding:10px 14px;border:0;border-radius:10px;font-weight:bold}.p{background:#176b4d;color:#fff}.s{background:#e8eeeb}.d{background:#fbe8e8;color:#9b2424}main{max-width:900px;margin:auto;padding:14px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px #0001}input,select{padding:10px;border:1px solid #ccd5d1;border-radius:9px;font-size:16px;max-width:100%}.choice{display:block;padding:12px;border:2px solid #ddd;border-radius:12px;margin:8px 0}.choice:has(input:checked){border-color:#176b4d;background:#f0f8f4}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.player{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #eee}.game{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0}.team{background:#f5f7f6;padding:9px;margin:6px 0;border-radius:8px}.score{width:70px}.hidden{display:none}.note{padding:11px;background:#eef7f2;border-radius:10px;margin:10px 0}table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #ddd;text-align:center}td:first-child,th:first-child{text-align:left}.muted{color:#68756f}</style></head><body><header><h1>🎯 Melé de Petanca</h1><small>Melé equilibrada · Sistema suizo internacional</small></header><nav><button onclick="tab('config')">Configuración</button><button onclick="tab('players')">Jugadores</button><button onclick="tab('round')">Ronda</button><button onclick="tab('stand')">Clasificación</button></nav><main>
-<section id="config" class="tab"><div class="card"><h2>Nuevo campeonato</h2><div class="note">El historial de compañeros y rivales es exclusivamente del campeonato actual. Al crear otro, empieza desde cero.</div><input id="cn" placeholder="Nombre del campeonato" style="width:100%"><h3>Tipo</h3><label class="choice"><input type="radio" name="sys" value="balanced" checked> <b>Melé equilibrada</b><br>No repite compañero ni contrincante cuando existe una combinación válida; además evita que antiguos compañeros sean rivales.</label><label class="choice"><input type="radio" name="sys" value="swiss"> <b>Sistema suizo internacional</b><br>Primera ronda aleatoria; después agrupa por puntuación acumulada.</label><div class="row"><label>Rondas <select id="nr"><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label><label>Pistas <input id="nc" type="number" min="1" value="8"></label></div><label><input id="tri" type="checkbox" checked> Permitir tripletas</label><br><label><input id="one" type="checkbox" checked> Permitir 1 contra 1 con exactamente 2</label><br><button class="p" onclick="newC()">Crear / reiniciar campeonato</button></div><div class="card"><b>Actual:</b><div id="ci" class="muted"></div></div></section>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#176b4d"><link rel="manifest" href="manifest.json"><title>Melé de Petanca</title><style>body{font-family:Arial,sans-serif;margin:0;background:#f3f5f4;color:#17231f}header{background:#176b4d;color:#fff;padding:18px}nav{display:flex;gap:6px;overflow:auto;background:#fff;padding:8px}button{padding:10px 14px;border:0;border-radius:10px;font-weight:bold}.p{background:#176b4d;color:#fff}.s{background:#e8eeeb}.d{background:#fbe8e8;color:#9b2424}main{max-width:900px;margin:auto;padding:14px}.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px #0001}input,select{padding:10px;border:1px solid #ccd5d1;border-radius:9px;font-size:16px;max-width:100%}.choice{display:block;padding:12px;border:2px solid #ddd;border-radius:12px;margin:8px 0}.choice:has(input:checked){border-color:#176b4d;background:#f0f8f4}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.player{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #eee}.game{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0}.team{background:#f5f7f6;padding:9px;margin:6px 0;border-radius:8px}.score{width:70px}.hidden{display:none}.note{padding:11px;background:#eef7f2;border-radius:10px;margin:10px 0}table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #ddd;text-align:center}td:first-child,th:first-child{text-align:left}.muted{color:#68756f}</style></head><body><header><h1>🎯 Melé de Petanca</h1><small>Melé equilibrada · Sistema suizo · Aleatorio puro</small></header><nav><button onclick="tab('config')">Configuración</button><button onclick="tab('players')">Jugadores</button><button onclick="tab('round')">Ronda</button><button onclick="tab('stand')">Clasificación</button></nav><main>
+<section id="config" class="tab"><div class="card"><h2>Nuevo campeonato</h2><div class="note">Los nombres se guardan en una lista permanente de este dispositivo. Selecciona los participantes y crea un campeonato nuevo con el modo que quieras.</div><input id="cn" placeholder="Nombre del campeonato" style="width:100%"><h3>Tipo</h3><label class="choice"><input type="radio" name="sys" value="balanced" checked> <b>Melé equilibrada</b><br>No repite compañero ni contrincante cuando existe una combinación válida; además evita que antiguos compañeros sean rivales.</label><label class="choice"><input type="radio" name="sys" value="swiss"> <b>Sistema suizo internacional</b><br>Primera ronda aleatoria; después agrupa por puntuación acumulada.</label><label class="choice"><input type="radio" name="sys" value="random"> <b>🎲 Aleatorio puro</b><br>Rondas, participantes y pistas sorteados independientemente.</label><div class="row"><label>Rondas <select id="nr"><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label><label>Pistas <input id="nc" type="number" min="1" value="8"></label></div><label><input id="tri" type="checkbox" checked> Permitir tripletas</label><br><label><input id="one" type="checkbox" checked> Permitir 1 contra 1 con exactamente 2</label><h3>Jugadores guardados</h3><div class="row"><input id="archiveName" placeholder="Nuevo nombre"><button class="p" onclick="archiveAddFromInput()">Guardar nombre</button></div><div id="archiveList"></div><div class="row"><button class="s" onclick="selectAllArchive(true)">Seleccionar todos</button><button class="s" onclick="selectAllArchive(false)">Quitar selección</button></div><button class="p" onclick="createChampionshipFromArchive()">Crear campeonato con seleccionados</button></div><div class="card"><b>Actual:</b><div id="ci" class="muted"></div></div></section>
 <section id="players" class="tab hidden"><div class="card"><h2>Jugadores</h2><div class="row"><input id="pn" placeholder="Nombre"><button class="p" onclick="add()">Añadir</button></div><div id="pl"></div><p class="muted">Numeración automática.</p></div></section>
 <section id="round" class="tab hidden"><div class="card"><div class="row"><button class="s" onclick="move(-1)">‹</button><h2 id="rt"></h2><button class="s" onclick="move(1)">›</button></div><div id="ri" class="muted"></div><div id="games"></div><button class="p" onclick="gen()">Sortear / generar ronda</button> <button class="s" onclick="saveR()">Guardar resultados</button></div></section>
 <section id="stand" class="tab hidden"><div class="card"><h2>Clasificación</h2><div id="st"></div></div></section></main>
 <script>
-const K='mele_petanca_v14';
+const K='mele_petanca_v14'; const PK='mele_petanca_player_archive_v1';
 let S=JSON.parse(localStorage.getItem(K)||'null')||{name:'',sys:'balanced',rounds:4,courts:8,tri:true,one:true,players:[],roundsData:[],started:false},vr=0;
+let PARCH=JSON.parse(localStorage.getItem(PK)||'null')||[];
 const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));
 const esc=x=>String(x).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const key=(a,b)=>[a,b].sort().join('|');
 const pts=p=>p.w+p.d*.5;
 function tab(x){document.querySelectorAll('.tab').forEach(e=>e.classList.add('hidden'));$(x).classList.remove('hidden');render()}
+function saveArchive(){localStorage.setItem(PK,JSON.stringify(PARCH))}
+function archiveAdd(name){
+  const n=String(name||'').trim();if(!n)return false;
+  if(PARCH.some(p=>p.name.toLocaleLowerCase('es')===n.toLocaleLowerCase('es')))return false;
+  PARCH.push({id:'archive-'+Date.now()+'-'+Math.random(),name:n});
+  PARCH.sort((a,b)=>a.name.localeCompare(b.name,'es'));saveArchive();return true;
+}
+function archiveAddFromInput(){
+  const el=$('archiveName'),n=el.value.trim();if(!n)return;
+  if(!archiveAdd(n))return alert('Ese nombre ya está guardado.');
+  el.value='';renderArchive();
+}
+function archiveDelete(id){
+  if(!confirm('¿Eliminar este nombre de la lista guardada?'))return;
+  PARCH=PARCH.filter(p=>p.id!==id);saveArchive();renderArchive();
+}
+function selectAllArchive(value){document.querySelectorAll('[data-archive-player]').forEach(x=>x.checked=value)}
+function renderArchive(){
+  const el=$('archiveList');if(!el)return;
+  if(!PARCH.length){el.innerHTML='<p class="muted">Todavía no hay nombres guardados.</p>';return;}
+  el.innerHTML=PARCH.map(p=>`<div class="player"><label style="flex:1"><input type="checkbox" data-archive-player value="${esc(p.id)}" checked> ${esc(p.name)}</label><button class="d" onclick="archiveDelete('${esc(p.id)}')">Eliminar</button></div>`).join('');
+}
+function createChampionshipFromArchive(){
+  const chosen=[...document.querySelectorAll('[data-archive-player]:checked')].map(x=>x.value);
+  if(chosen.length<2)return alert('Selecciona al menos 2 jugadores.');
+  if(S.started&&!confirm('Se sustituirá el campeonato actual. ¿Continuar?'))return;
+  const names=PARCH.filter(p=>chosen.includes(p.id)).map(p=>p.name);
+  S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:names.map(name=>({id:Date.now()+'-'+Math.random(),name,w:0,d:0,l:0,pf:0,pc:0})),roundsData:[],started:false};
+  vr=0;save();render();tab('players');
+}
 function newC(){if(S.started&&!confirm('Se borrará el campeonato actual y su historial. ¿Continuar?'))return;S={name:$('cn').value.trim()||'Melé de Petanca',sys:document.querySelector('input[name=sys]:checked').value,rounds:+$('nr').value,courts:+$('nc').value||1,tri:$('tri').checked,one:$('one').checked,players:[],roundsData:[],started:false};vr=0;save();tab('players')}
-function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}
+function add(){let n=$('pn').value.trim();if(!n)return;if(S.started)return alert('No se pueden añadir jugadores después de comenzar.');archiveAdd(n);S.players.push({id:Date.now()+'-'+Math.random(),name:n,w:0,d:0,l:0,pf:0,pc:0});$('pn').value='';save();render()}
 function del(id){if(S.started)return;S.players=S.players.filter(p=>p.id!==id);save();render()}
 
 /* ---------- MELÉ EQUILIBRADA: MOTOR NUEVO ----------
@@ -240,6 +271,38 @@ function strictSmallBalanced(ids){
   return {games};
 }
 
+/* ---------- ALEATORIO PURO: MOTOR INDEPENDIENTE ----------
+   Cada ronda se mezcla desde cero.
+   No consulta el historial de compañeros/rivales.
+   La pista también se sortea independientemente.
+   Solo respeta la composición matemática elegida.
+*/
+function randomPure(ids){
+  const types=composition(ids.length);
+  if(!types)return null;
+
+  const order=sh(ids);
+  let k=0,games=[];
+  for(const z of types){
+    const [as,bs]=gameShape(z);
+    games.push({
+      teams:[
+        order.slice(k,k+as),
+        order.slice(k+as,k+z)
+      ]
+    });
+    k+=z;
+  }
+
+  // Las pistas también se sortean sin usar el historial.
+  const available=[];
+  for(let i=1;i<=Math.max(1,S.courts);i++)available.push(i);
+  const shuffledCourts=sh(available);
+
+  games=sh(games).map((g,i)=>({...g,court:shuffledCourts[i%shuffledCourts.length]}));
+  return {games};
+}
+
 function balanced(ids){
   const types=composition(ids.length);if(!types)return null;
   const templ=smallBalancedTemplate(ids);if(templ)return templ;
@@ -295,7 +358,7 @@ function gen(){
 
   let g;
   try{
-    g=S.sys==='swiss'&&!S.roundsData.length?firstSwiss(ids):S.sys==='swiss'?swiss(ids):balanced(ids);
+    g=S.sys==='random'?randomPure(ids):S.sys==='swiss'&&!S.roundsData.length?firstSwiss(ids):S.sys==='swiss'?swiss(ids):balanced(ids);
   }catch(e){
     console.error('Error generando ronda:',e);
     S.roundsData=oldRounds;
@@ -328,9 +391,10 @@ function saveR(){
 }
 function move(d){if(S.roundsData.length){vr=Math.max(0,Math.min(S.roundsData.length-1,vr+d));tab('round')}}
 function render(){
+  renderArchive();
   $('cn').value=S.name||'';$('nr').value=S.rounds;$('nc').value=S.courts;$('tri').checked=S.tri;$('one').checked=S.one;
   document.querySelectorAll('input[name=sys]').forEach(x=>x.checked=x.value===S.sys);
-  $('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';
+  $('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='random'?'🎲 Aleatorio puro':S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';
   $('pl').innerHTML=S.players.length?S.players.map((p,i)=>`<div class="player"><span><b>${i+1}.</b> ${esc(p.name)}</span>${!S.started?`<button class="d" onclick="del('${p.id}')">Eliminar</button>`:''}</div>`).join(''):'<p class="muted">No hay jugadores.</p>';
   const r=S.roundsData[vr];$('rt').textContent=r?`Ronda ${r.number} / ${S.rounds}`:'Sin ronda';$('ri').textContent=r?(complete(r)?'Resultados guardados':'Pendiente de resultados'):'Genera la primera ronda.';
   $('games').innerHTML=r?r.games.map((g,i)=>{const a=g.teams[0].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + '),b=g.teams[1].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + ');return `<div class="game"><b>Pista ${g.court} · Partida ${i+1}</b><div class="team">${esc(a)} <input class="score" type="number" min="0" data-score="${i}-a" value="${g.result?.a??''}"></div><div style="text-align:center">VS</div><div class="team">${esc(b)} <input class="score" type="number" min="0" data-score="${i}-b" value="${g.result?.b??''}"></div></div>`}).join(''):'';
