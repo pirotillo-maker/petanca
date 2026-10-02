@@ -386,16 +386,20 @@ function swissGroupCost(order,types,R){
     for(const team of [A,B])for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++){
       const wi=pm.get(team[i])?.w||0,wj=pm.get(team[j])?.w||0,q=key(team[i],team[j]);
       if(wi===wj)sameScoreTeammate++;
+      // Un par puede haber sido compañero y rival en rondas distintas:
+      // contabilizamos ambos conflictos, sin ocultar la inversión.
       if(R.tm.has(q))repeatPartner++;
-      else if(R.rv.has(q))reverseRelation++;
+      if(R.rv.has(q))reverseRelation++;
     }
     for(const a of A)for(const b of B){
       const q=key(a,b);
       if(R.tm.has(q))reverseRelation++;
-      else if(R.rv.has(q))repeatRival++;
+      if(R.rv.has(q))repeatRival++;
     }
   }
-  return [repeatPartner,reverseRelation,repeatRival,sameScoreTeammate];
+  // La regla principal es no invertir relaciones previas en ninguno de los
+  // sentidos. Después se evita repetir compañero y, por último, rival.
+  return [reverseRelation,repeatPartner,repeatRival,sameScoreTeammate];
 }
 function swissGroupGame(ids,R){
   const n=ids.length;
@@ -435,31 +439,29 @@ function swissGameScore(game,pm){
   return {min,max,gap:max-min};
 }
 function swissImprovePools(pools,R,pm){
-  // Solo comparamos partidas adyacentes y hacemos como mucho dos pasadas.
-  // Es suficiente para corregir conflictos locales sin convertir el Suizo
-  // en una busqueda global costosa.
-  for(let pass=0;pass<2;pass++){
+  // Busca mejoras entre cualquier par de partidas. Se conservan las victorias
+  // de cada plaza para no alterar los grupos ni los floats del emparejamiento.
+  // La búsqueda acepta una mejora estricta cada vez y vuelve a empezar;
+  // así escapa de conflictos entre partidas no contiguas sin una búsqueda
+  // combinatoria ilimitada.
+  const costPool=p=>{const g=swissGroupGame(p,R);return g?swissGroupCost(g.teams.flat(),[p.length],R):null;};
+  const maxMoves=Math.min(100,Math.max(12,pools.length*5));
+  for(let move=0;move<maxMoves;move++){
     let changed=false;
-    for(let i=0;i<pools.length-1;i++){
-      const j=i+1, ni=pools[i], nj=pools[j];
-      const si=swissGameScore(ni,pm),sj=swissGameScore(nj,pm);
-      if(Math.abs(si.min-sj.max)>1 && Math.abs(sj.min-si.max)>1)continue;
-      const ga0=swissGroupGame(ni,R),gb0=swissGroupGame(nj,R);if(!ga0||!gb0)continue;
-      const c0=swissGroupCost(ga0.teams.flat(),[ni.length],R),c1=swissGroupCost(gb0.teams.flat(),[nj.length],R),base=c0.map((v,k)=>v+c1[k]);
-      if(base.every(x=>x===0))continue;
-      let best=null,ai=-1,bj=-1;
-      for(let x=0;x<ni.length;x++)for(let y=0;y<nj.length;y++){
-        // El intercambio entre partidas nunca cambia de categoria de victorias.
-        // Solo movemos jugadores con el mismo numero de victorias, para que
-        // la optimizacion de relaciones no desvirtue el agrupamiento Suizo.
-        if((pm.get(ni[x])?.w||0)!==(pm.get(nj[y])?.w||0))continue;
-        const A=ni.slice(),B=nj.slice();[A[x],B[y]]=[B[y],A[x]];
-        if(swissGameScore(A,pm).gap>1||swissGameScore(B,pm).gap>1)continue;
-        const ga=swissGroupGame(A,R),gb=swissGroupGame(B,R);if(!ga||!gb)continue;
-        const ca=swissGroupCost(ga.teams.flat(),[A.length],R),cb=swissGroupCost(gb.teams.flat(),[B.length],R),sc=ca.map((v,k)=>v+cb[k]);
-        if(lexBetter(sc,base)&&(!best||lexBetter(sc,best))){best=sc;ai=x;bj=y}
+    outer: for(let i=0;i<pools.length;i++)for(let j=i+1;j<pools.length;j++){
+      const A=pools[i],B=pools[j],oldA=costPool(A),oldB=costPool(B);if(!oldA||!oldB)continue;
+      const base=oldA.map((v,k)=>v+oldB[k]);
+      for(let x=0;x<A.length;x++)for(let y=0;y<B.length;y++){
+        if((pm.get(A[x])?.w||0)!==(pm.get(B[y])?.w||0))continue;
+        [A[x],B[y]]=[B[y],A[x]];
+        const ca=costPool(A),cb=costPool(B);
+        [A[x],B[y]]=[B[y],A[x]];
+        if(!ca||!cb)continue;
+        const candidate=ca.map((v,k)=>v+cb[k]);
+        if(lexBetter(candidate,base)){
+          [A[x],B[y]]=[B[y],A[x]];changed=true;break outer;
+        }
       }
-      if(ai>=0){[ni[ai],nj[bj]]=[nj[bj],ni[ai]];changed=true;}
     }
     if(!changed)break;
   }
@@ -583,11 +585,19 @@ function compareSwiss(a,b){
   const ad=(a.pf||0)-(a.pc||0),bd=(b.pf||0)-(b.pc||0);
   if(bd!==ad)return bd-ad;
   if((b.pf||0)!==(a.pf||0))return (b.pf||0)-(a.pf||0);
-  // Enfrentamiento directo: primero los puntos conseguidos contra el grupo empatado.
   const tied=S.players.filter(p=>(p.w||0)===(a.w||0)&&((p.pf||0)-(p.pc||0))===ad&&(p.pf||0)===(a.pf||0));
-  const ids=new Set(tied.map(p=>p.id));
-  const ah=directScore(a.id,ids),bh=directScore(b.id,ids);
-  if(bh!==ah)return bh-ah;
+  if(S.sys==='swiss'){
+    // En Swiss, el cara a cara solo se usa en un empate de dos jugadores
+    // que realmente se hayan enfrentado como rivales. Una mini-tabla parcial
+    // de un empate múltiple puede producir órdenes contradictorios.
+    if(tied.length===2){
+      const played=S.roundsData.some(r=>r.games.some(g=>(g.teams[0].includes(a.id)&&g.teams[1].includes(b.id))||(g.teams[1].includes(a.id)&&g.teams[0].includes(b.id))));
+      if(played){const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;}
+    }
+  }else{
+    // Conservamos el comportamiento de desempate de los otros modos.
+    const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;
+  }
   const as=strengthScore(a.id),bs=strengthScore(b.id);
   if(bs[0]!==as[0])return bs[0]-as[0];
   if(bs[1]!==as[1])return bs[1]-as[1];
