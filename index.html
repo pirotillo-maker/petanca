@@ -403,7 +403,7 @@ function swissGroupCost(order,types,R,ranked=order){
     const inverseMismatch=z-mismatch;
     rankPattern+=Math.min(mismatch,inverseMismatch);
   }
-  return [repeatPartner,repeatRival,reverseRelation,rankPattern];
+  return [repeatPartner,reverseRelation,repeatRival,rankPattern];
 }
 function swissGroupGame(ids,R){
   const n=ids.length;
