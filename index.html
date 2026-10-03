@@ -334,104 +334,110 @@ function swissBuckets(ids){
   return out;
 }
 function swissGroups(ids){
-  // Agrupacion Suiza por victorias. Se intenta mantener cada partida dentro
-  // de una misma categoria; cuando no es posible, se hace el float minimo
-  // desde las categorias consecutivas. Si ni siquiera eso permite completar
-  // la ronda, se acepta el menor salto de victorias posible.
-  const types=composition(ids.length);if(!types)return null;
-  const pm=new Map(S.players.map(p=>[p.id,p]));
-  const buckets=new Map();
-  for(const id of sh(ids)){const w=pm.get(id)?.w||0;if(!buckets.has(w))buckets.set(w,[]);buckets.get(w).push(id)}
-  const wins=[...buckets.keys()].sort((a,b)=>b-a),counts=wins.map(w=>buckets.get(w).length),memo=new Map();
-  function better(a,b){if(!b)return true;if(a.gap!==b.gap)return a.gap<b.gap;if(a.float!==b.float)return a.float<b.float;return a.parts<b.parts}
-  function rec(ti,ci){
-    const keym=ti+'|'+ci.join(',');if(memo.has(keym))return memo.get(keym);
-    if(ti===types.length)return ci.every(x=>x===0)?{gap:0,float:0,parts:0,alloc:[]}:null;
-    let start=ci.findIndex(x=>x>0);if(start<0)return null;
-    const z=types[ti];let best=null,sel=[];
-    function choose(bi,left){
-      if(left===0){
-        const nc=ci.slice();let first=-1,last=-1,totalLow=0;
-        for(const [idx,num] of sel)if(num){nc[idx]-=num;if(first<0)first=idx;last=idx;totalLow+=idx-start===0?0:num}
-        if(nc.some(x=>x<0))return;
-        const sub=rec(ti+1,nc);if(!sub)return;
-        const gap=wins[first]-wins[last],parts=(last-first+1);
-        const cand={gap:Math.max(gap,sub.gap),float:totalLow+sub.float,parts:parts+sub.parts,alloc:[[sel.slice()],...sub.alloc]};
-        if(better(cand,best))best=cand;return;
-      }
-      // No saltamos categorias: una vez que usamos una inferior, seguimos
-      // hacia abajo hasta completar la partida.
-      for(let num=Math.min(left,ci[bi]||0);num>=0;num--){
-        if(num===0&&bi===start)continue;
-        sel.push([bi,num]);
-        if(num<left && bi+1<wins.length)choose(bi+1,left-num);
-        else if(num===left)choose(bi,left-num);
-        sel.pop();
-      }
+  // Orden suizo: victorias descendentes y, dentro de cada categoría,
+  // clasificación descendente. El planificador elige tamaños de partida
+  // para mezclar el mínimo número posible de categorías.
+  const ordered=ids.slice().sort((a,b)=>{
+    const pa=S.players.find(p=>p.id===a),pb=S.players.find(p=>p.id===b);
+    const wa=pa?.w||0,wb=pb?.w||0;
+    if(wa!==wb)return wb-wa;
+    return compareSwiss(pa,pb);
+  });
+  const n=ordered.length,memo=new Map(),singleMemo=new Map();
+  const baseSizes=S.tri?[4,5,6]:[4];
+  function canNoSingle(left){
+    if(left===0)return true;if(left<0)return false;if(singleMemo.has(left))return singleMemo.get(left);
+    const ok=baseSizes.some(z=>z<=left&&canNoSingle(left-z));singleMemo.set(left,ok);return ok;
+  }
+  // El 1x1 se reserva para los casos en los que no exista otra composición
+  // posible. La casilla de tripletas se respeta también en el suizo.
+  const allowSingle=S.one&&!canNoSingle(n);
+  const sizes=[...baseSizes,...(allowSingle?[2]:[])];
+  const better=(a,b)=>!b||a.borrowed<b.borrowed||
+    (a.borrowed===b.borrowed&&(a.triplets<b.triplets||
+    (a.triplets===b.triplets&&a.singles<b.singles)));
+  function plan(pos,usedOne){
+    const keym=pos+'|'+usedOne;if(memo.has(keym))return memo.get(keym);
+    if(pos===n)return {borrowed:0,triplets:0,singles:0,sizes:[]};
+    let best=null;
+    for(const z of sizes){
+      if(pos+z>n||(z===2&&usedOne))continue;
+      const base=S.players.find(p=>p.id===ordered[pos])?.w||0;
+      let borrowed=0;
+      for(let i=pos;i<pos+z;i++)if((S.players.find(p=>p.id===ordered[i])?.w||0)!==base)borrowed++;
+      const rest=plan(pos+z,usedOne||z===2);if(!rest)continue;
+      const candidate={borrowed:borrowed+rest.borrowed,
+        triplets:(z===5||z===6?1:0)+rest.triplets,
+        singles:(z===2?1:0)+rest.singles,
+        sizes:[z,...rest.sizes]};
+      if(better(candidate,best))best=candidate;
     }
-    // Elegimos entre todas las cantidades posibles de la categoria superior.
-    choose(start,z);
     memo.set(keym,best);return best;
   }
-  const plan=rec(0,counts);if(!plan)return null;
-  const work=wins.map(w=>buckets.get(w).slice()),groups=[];
-  for(const [alloc] of plan.alloc){const group=[];for(const [idx,num] of alloc)for(let i=0;i<num;i++)group.push(work[idx].shift());groups.push(sh(group))}
-  return groups;
+  const chosen=plan(0,false);if(!chosen)return null;
+  const groups=[];let pos=0;
+  for(const size of chosen.sizes){groups.push(ordered.slice(pos,pos+size));pos+=size;}
+  return pos===n?groups:null;
 }
-function swissGroupCost(order,types,R){
-  let sameScoreTeammate=0,repeatPartner=0,reverseRelation=0,repeatRival=0,k=0;
-  const pm=new Map(S.players.map(p=>[p.id,p]));
+function swissGroupCost(order,types,R,ranked=order){
+  let repeatPartner=0,repeatRival=0,reverseRelation=0,rankPattern=0,k=0;
   for(const z of types){
     const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
     for(const team of [A,B])for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++){
-      const wi=pm.get(team[i])?.w||0,wj=pm.get(team[j])?.w||0,q=key(team[i],team[j]);
-      if(wi===wj)sameScoreTeammate++;
-      // Un par puede haber sido compañero y rival en rondas distintas:
-      // contabilizamos ambos conflictos, sin ocultar la inversión.
+      const q=key(team[i],team[j]);
       if(R.tm.has(q))repeatPartner++;
       if(R.rv.has(q))reverseRelation++;
     }
     for(const a of A)for(const b of B){
       const q=key(a,b);
-      if(R.tm.has(q))reverseRelation++;
       if(R.rv.has(q))repeatRival++;
+      if(R.tm.has(q))reverseRelation++;
     }
+    // Preferencia de clasificación: alternar puestos 1.º, 3.º, 5.º...
+    // contra 2.º, 4.º, 6.º... Así los mejor clasificados se enfrentan,
+    // sin convertir esta preferencia en una excusa para repetir relaciones.
+    const source=ranked.slice(k-z,k);
+    const expected=new Set();for(let i=0;i<z;i+=2)expected.add(source[i]);
+    const actual=new Set(A);
+    let mismatch=0;for(const id of source)if(actual.has(id)!==expected.has(id))mismatch++;
+    const inverseMismatch=z-mismatch;
+    rankPattern+=Math.min(mismatch,inverseMismatch);
   }
-  // La regla principal es no invertir relaciones previas en ninguno de los
-  // sentidos. Después se evita repetir compañero y, por último, rival.
-  return [reverseRelation,repeatPartner,repeatRival,sameScoreTeammate];
+  return [repeatPartner,repeatRival,reverseRelation,rankPattern];
 }
 function swissGroupGame(ids,R){
   const n=ids.length;
   if(n===2)return {teams:[[ids[0]],[ids[1]]]};
-  const types=composition(n);if(!types||types.length!==1)return null;
-  const z=types[0],[as,bs]=gameShape(z);
-
-  // Los grupos Suizos son pequeños (2/4/5/6). En lugar de miles de
-  // reinicios aleatorios, probamos directamente las particiones posibles.
-  // Esto es mucho más rápido y permite garantizar la prioridad de relaciones.
+  if(![2,4,5,6].includes(n))return null;
+  const z=n,[as,bs]=gameShape(z);
   let best=null,bestTeams=null;
-  const A=[];
-  function choose(start,left,pick){
-    if(pick===0){
-      const set=new Set(left), teamA=left.slice();
-      const teamB=ids.filter(x=>!set.has(x));
-      const order=teamA.concat(teamB), score=swissGroupCost(order,[z],R);
-      if(lexBetter(score,best)){best=score;bestTeams=[teamA,teamB];}
+  function choose(start,picked){
+    if(picked.length===as){
+      const selected=new Set(picked),teamB=ids.filter(x=>!selected.has(x));
+      const score=swissGroupCost(picked.concat(teamB),[z],R,ids);
+      if(lexBetter(score,best)){best=score;bestTeams=[picked.slice(),teamB];}
       return;
     }
-    for(let i=start;i<=n-pick;i++)choose(i+1,left.concat(ids[i]),pick-1);
+    const need=as-picked.length;
+    for(let i=start;i<=n-need;i++)choose(i+1,picked.concat(ids[i]));
   }
-  // Para 2x2, 3x2 y 3x3 basta con explorar combinaciones del primer equipo.
-  // Si ambos equipos tienen el mismo tamaño, fijamos ids[0] en A para evitar
-  // evaluar dos veces la misma partición invertida.
+  // Para equipos iguales evitamos evaluar la misma partición al revés.
   if(as===bs){
-    choose(1,[ids[0]],as-1);
-  }else{
-    choose(0,[],as);
-  }
-  if(!bestTeams)return null;
-  return {teams:bestTeams};
+    if(!ids.length)return null;
+    const first=ids[0];
+    function chooseFixed(start,picked){
+      if(picked.length===as){
+        const selected=new Set(picked),teamB=ids.filter(x=>!selected.has(x));
+        const score=swissGroupCost(picked.concat(teamB),[z],R,ids);
+        if(lexBetter(score,best)){best=score;bestTeams=[picked.slice(),teamB];}
+        return;
+      }
+      const need=as-picked.length;
+      for(let i=start;i<=n-need;i++)chooseFixed(i+1,picked.concat(ids[i]));
+    }
+    chooseFixed(1,[first]);
+  }else choose(0,[]);
+  return bestTeams?{teams:bestTeams}:null;
 }
 function swissGameScore(game,pm){
   let min=Infinity,max=-Infinity;
@@ -439,8 +445,9 @@ function swissGameScore(game,pm){
   return {min,max,gap:max-min};
 }
 function swissImprovePools(pools,R,pm){
-  // Busca mejoras entre cualquier par de partidas. Se conservan las victorias
-  // de cada plaza para no alterar los grupos ni los floats del emparejamiento.
+  // Busca mejoras entre partidas sin cambiar el orden de clasificación:
+  // solo intercambia jugadores completamente empatados según el desempate suizo.
+  // Así no se altera quién sube desde la categoría inmediatamente inferior.
   // La búsqueda acepta una mejora estricta cada vez y vuelve a empezar;
   // así escapa de conflictos entre partidas no contiguas sin una búsqueda
   // combinatoria ilimitada.
@@ -452,7 +459,7 @@ function swissImprovePools(pools,R,pm){
       const A=pools[i],B=pools[j],oldA=costPool(A),oldB=costPool(B);if(!oldA||!oldB)continue;
       const base=oldA.map((v,k)=>v+oldB[k]);
       for(let x=0;x<A.length;x++)for(let y=0;y<B.length;y++){
-        if((pm.get(A[x])?.w||0)!==(pm.get(B[y])?.w||0))continue;
+        if((pm.get(A[x])?.w||0)!==(pm.get(B[y])?.w||0)||compareSwiss(pm.get(A[x]),pm.get(B[y]))!==0)continue;
         [A[x],B[y]]=[B[y],A[x]];
         const ca=costPool(A),cb=costPool(B);
         [A[x],B[y]]=[B[y],A[x]];
@@ -469,17 +476,27 @@ function swissImprovePools(pools,R,pm){
 }
 function swiss(ids){
   const groups=swissGroups(ids);if(!groups)return null;
-  const R=relations(),pm=new Map(S.players.map(p=>[p.id,p]));
-  // Primero resolvemos cada partida de forma exacta y muy barata.
-  const pools=swissImprovePools(groups.map(g=>g.slice()),R,pm);
-  const games=[];
-  for(const g of pools){
-    const game=swissGroupGame(g,R);if(!game)return null;
+  const R=relations(),games=[];
+  // Primero optimizamos cada partida; después probamos intercambios entre
+  // partidas de jugadores con las mismas victorias. Así se pueden resolver
+  // conflictos de historial entre grupos sin alterar los floats por puntos.
+  const pm=new Map(S.players.map(p=>[p.id,p]));
+  swissImprovePools(groups,R,pm);
+  for(const group of groups){
+    const game=swissGroupGame(group,R);if(!game)return null;
     games.push({teams:game.teams});
   }
   return {games};
 }
-function firstSwiss(ids){const types=composition(ids.length);if(!types)return null;const order=sh(ids);let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z}return {games};}
+function swissComposition(n){
+  if(S.tri)return composition(n);
+  // Sin tripletas solo caben partidas 2x2 y, si hace falta y está permitido,
+  // una única partida 1x1.
+  if(n%4===0)return Array(n/4).fill(4);
+  if(S.one&&n%4===2&&n>=2)return [...Array((n-2)/4).fill(4),2];
+  return null;
+}
+function firstSwiss(ids){const types=swissComposition(ids.length);if(!types)return null;const order=sh(ids);let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z}return {games};}
 
 // Último recurso: si el optimizador no devuelve una combinación válida
 // por un estado inesperado del navegador, siempre podemos formar una ronda
@@ -533,8 +550,8 @@ function gen(){
 
   // Si el optimizador falla, usamos una distribución de respaldo válida.
   // Así nunca se bloquea una segunda o tercera ronda por una búsqueda aleatoria.
-  if(!g||!valid(g))g=fallbackRound(ids);
-  if(!g||!valid(g))return alert('No se ha podido formar una ronda válida con las opciones actuales.');
+  if((!g||!valid(g))&&S.sys!=='swiss')g=fallbackRound(ids);
+  if(!g||!valid(g))return alert(S.sys==='swiss'?'No se ha podido generar la ronda suiza sin alterar las categorías. Revisa la configuración.':'No se ha podido formar una ronda válida con las opciones actuales.');
   const n=S.roundsData.length+1;
   S.roundsData.push({number:n,games:g.games.map((x,i)=>({...x,court:x.court??(i%Math.max(1,S.courts)+1),result:null}))});
   S.started=true;vr=S.roundsData.length-1;save();tab('round');
