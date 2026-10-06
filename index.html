@@ -568,6 +568,58 @@ function swissMegaGame(ids,R){
     }
   }
 
+  // R4: primero intentamos resolver SOLO la restricción más importante
+  // (no repetir compañero) mediante búsqueda exhaustiva con retroceso.
+  // Así no dependemos de que el recocido encuentre por azar la combinación
+  // correcta. Dentro del subgrupo todos los jugadores son intercambiables.
+  if(swissRound===4){
+    const forbidden=new Set();
+    for(const q of R.tm)for(const pair of [q])for(const x of pair){} // mantener R.tm como fuente
+    const isForbidden=(a,b)=>R.tm.has(key(a,b));
+    const teamSizes=[];
+    for(const z of types){const [as,bs]=gameShape(z);teamSizes.push(as,bs)}
+    let nodes=0,exactOrder=null,exactScore=null;
+    const limit=n<=30?500000:n<=45?350000:n<=60?220000:140000;
+    const used=new Set(),teams=[];
+    function dfs(){
+      if(exactOrder&&exactScore&&exactScore[0]===0)return true;
+      if(nodes++>limit)return false;
+      if(teams.length===teamSizes.length){
+        const order=teams.flat(),sc=cost(order);
+        if(!exactScore||lexBetter(sc,exactScore)){exactScore=sc;exactOrder=order.slice()}
+        return sc[0]===0;
+      }
+      const size=teamSizes[teams.length];
+      const rem=ids.filter(id=>!used.has(id));
+      if(rem.length<size)return false;
+      const anchor=rem[0];
+      const choices=[];
+      function pick(start,left){
+        if(left===0){
+          const team=[anchor,...choices];
+          for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)if(isForbidden(team[i],team[j]))return;
+          // Priorizar equipos con menos conflictos secundarios, pero sin
+          // sacrificar nunca la búsqueda completa del compañero.
+          choices.length&&null;
+          candidates.push(team);return;
+        }
+        for(let i=start;i<=rem.length-left;i++){choices.push(rem[i]);pick(i+1,left-1);choices.pop()}
+      }
+      const candidates=[];pick(1,size-1);
+      candidates.sort(()=>Math.random()-.5);
+      for(const team of candidates){
+        team.forEach(x=>used.add(x));teams.push(team);
+        if(dfs())return true;
+        teams.pop();team.forEach(x=>used.delete(x));
+      }
+      return false;
+    }
+    dfs();
+    if(exactOrder&&exactScore&&exactScore[0]===0){
+      bestOrder=exactOrder;bestScore=exactScore;
+    }
+  }
+
   // Varias búsquedas independientes. R4 necesita más intentos porque es
   // donde las restricciones acumuladas son más fuertes.
   const r4=S.roundsData.length+1===4;
