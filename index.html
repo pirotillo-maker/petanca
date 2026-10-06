@@ -564,7 +564,7 @@ function swissMegaGame(ids,R){
       idx++;
     }
     // Improve opponent assignment by swaps while preserving teammates.
-    let best=games,bestCost=roundCost(games.flatMap(g=>g.teams).flat(),types,'swiss',new Map(S.players.map(p=>[p.id,p])));
+    let best=games,bestCost=swissGroupCost(games.flatMap(g=>g.teams).flat(),types,R);
     for(let pass=0;pass<120;pass++){
       const a=Math.floor(Math.random()*games.length),b=Math.floor(Math.random()*games.length);
       if(a===b)continue;
@@ -572,7 +572,7 @@ function swissMegaGame(ids,R){
       const old=bestCost;
       [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
       const order=games.flatMap(g=>g.teams).flat();
-      const ns=roundCost(order,types,'swiss',new Map(S.players.map(p=>[p.id,p])));
+      const ns=swissGroupCost(order,types,R);
       if(lexBetter(ns,old))bestCost=ns;
       else [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
       if(bestCost[2]===0&&bestCost[3]===0&&bestCost[4]===0)break;
