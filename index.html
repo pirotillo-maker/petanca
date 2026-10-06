@@ -451,6 +451,7 @@ function swissGroups(ids){
    */
   let carry=[];
   for(let i=0;i<work.length;i++){
+    const scoreTag=wins[i];
     let current=carry.concat(work[i]);
     carry=[];
 
@@ -467,7 +468,7 @@ function swissGroups(ids){
     if(!comp)return null;
     let pos=0;
     for(const z of comp){
-      const g=current.slice(pos,pos+z); g.swissScore=w; out.push(g);
+      const g=current.slice(pos,pos+z); g.swissScore=scoreTag; out.push(g);
       pos+=z;
     }
   }
