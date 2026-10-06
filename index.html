@@ -549,7 +549,23 @@ function swissMegaGame(ids,R){
       }
       if(ok&&left.length===0)return teams;
     }
-    return null;
+    // Segundo nivel: si la partición estricta no apareció, buscamos la
+    // partición completa con MENOR número posible de compañeros repetidos.
+    // Esto evita bloquear una ronda por culpa del azar del constructor.
+    let best=null,bestRepeat=Infinity;
+    for(let attempt=0;attempt<300;attempt++){
+      const order=sh(left0),teams=[],sizes2=sizes.slice();
+      let k=0,reps=0;
+      for(const size of sizes2){
+        const team=order.slice(k,k+size);k+=size;
+        for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)
+          if(R.tm.has(key(team[i],team[j])))reps++;
+        teams.push(team);
+      }
+      if(reps<bestRepeat){bestRepeat=reps;best=teams;}
+      if(bestRepeat===0)break;
+    }
+    return best;
   }
 
   function matchTeams(teams){
