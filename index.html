@@ -569,8 +569,8 @@ function swissMegaGame(ids,R){
       return null;
     }
 
-    for(let attempt=0;attempt<80;attempt++){
-      const got=search(sh(ids),0,[],{count:12000});
+    for(let attempt=0;attempt<20;attempt++){
+      const got=search(sh(ids),0,[],{count:3000});
       if(got)return got;
     }
 
@@ -608,7 +608,7 @@ function swissMegaGame(ids,R){
   }
 
   let best=null,bestScore=null;
-  const attempts=n<=30?500:n<=45?350:n<=60?220:140;
+  const attempts=n<=30?80:n<=45?60:n<=60?45:30;
   for(let a=0;a<attempts;a++){
     const teams=makeTeams();
     if(!teams)continue;
