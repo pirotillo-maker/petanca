@@ -511,7 +511,7 @@ function swissMegaGame(ids,R){
     return swissGroupCost(order,types,R);
   }
   function improve(order,score){
-    const tries=Math.min(160,Math.max(40,n*2));
+    const tries=Math.min(300,Math.max(80,n*5));
     for(let z=0;z<tries;z++){
       const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
       if(i===j)continue;
@@ -524,7 +524,7 @@ function swissMegaGame(ids,R){
     return score;
   }
 
-  const attempts=n<=20?160:n<=30?120:n<=45?90:n<=60?65:45;
+  const attempts=n<=20?240:n<=30?300:n<=45?260:n<=60?160:100;
   for(let a=0;a<attempts;a++){
     const order=sh(ids);
     let score=improve(order,cost(order));
