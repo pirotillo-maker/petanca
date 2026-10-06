@@ -639,6 +639,35 @@ function swissMegaGame(ids,R){
       else [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
       if(bestCost[2]===0&&bestCost[3]===0&&bestCost[4]===0)break;
     }
+    // Última reparación sobre la ronda completa: intercambiamos jugadores
+    // entre equipos manteniendo intactos los tamaños. La prioridad absoluta
+    // es reducir compañeros repetidos; después se respetan las demás reglas.
+    const flatGames=()=>games.flatMap(g=>g.teams).flat();
+    for(let pass=0;pass<500&&bestCost[0]>0;pass++){
+      let improved=false;
+      for(let a=0;a<games.length&&!improved;a++)for(let ta=0;ta<2&&!improved;ta++){
+        for(let ia=0;ia<games[a].teams[ta].length&&!improved;ia++){
+          for(let b=a;b<games.length&&!improved;b++)for(let tb=0;tb<2&&!improved;tb++){
+            for(let ib=0;ib<games[b].teams[tb].length&&!improved;ib++){
+              if(a===b&&ta===tb)continue;
+              const A=games[a].teams[ta],B=games[b].teams[tb];
+              if(a===b&&A.length===B.length&&ta!==tb){
+                [A[ia],B[ib]]=[B[ib],A[ia]];
+              }else{
+                [A[ia],B[ib]]=[B[ib],A[ia]];
+              }
+              const ns=swissGroupCost(flatGames(),types,R);
+              if(lexBetter(ns,bestCost)){
+                bestCost=ns;improved=true;
+              }else{
+                [A[ia],B[ib]]=[B[ib],A[ia]];
+              }
+            }
+          }
+        }
+      }
+      if(!improved)break;
+    }
     return {games,score:bestCost};
   }
 
