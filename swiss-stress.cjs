@@ -26,5 +26,5 @@ function one(n,seed){
 let total=0,max=0,fail=0,rows=[];
 const cases=[10,15,20,25,27,30,35,40,45,50,60,70,79];
 for(const n of cases){try{const v=one(n,10000+n);total+=v;max=Math.max(max,v);rows.push([n,v])}catch(e){fail++;rows.push([n,'FAIL '+e.message])}}
-for(const n of [35,40,45])for(let s=1;s<=2;s++){try{const v=one(n,50000+n*100+s);total+=v;max=Math.max(max,v);rows.push([n+'#'+s,v])}catch(e){fail++;rows.push([n+'#'+s,'FAIL '+e.message])}}
+for(const n of [30,35,40,45,50])for(let s=1;s<=20;s++){try{const v=one(n,50000+n*100+s);total+=v;max=Math.max(max,v);rows.push([n+'#'+s,v])}catch(e){fail++;rows.push([n+'#'+s,'FAIL '+e.message])}}
 console.log(JSON.stringify({totalPartnerRepeats:total,maxInOneChampionship:max,generationFailures:fail,problems:rows}));
