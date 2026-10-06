@@ -355,7 +355,7 @@ function swissGroups(ids){
     if(!buckets.has(w))buckets.set(w,[]);
     buckets.get(w).push(id);
   }
-  for(const b of buckets.values())b.sort(compareSwiss);
+  for(const b of buckets.values())b.sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
   const wins=[...buckets.keys()].sort((a,b)=>b-a);
   const counts=wins.map(w=>buckets.get(w).length);
   const memo=new Map();
@@ -384,7 +384,7 @@ function swissGroups(ids){
     const give=plan[i].give;
     if(give){carry=current.splice(current.length-give,give);}
     let pos=0;
-    for(const z of plan[i].comp){out.push(sh(current.slice(pos,pos+z)));pos+=z;}
+    for(const z of plan[i].comp){out.push(current.slice(pos,pos+z));pos+=z;}
     if(pos!==current.length)return null;
   }
   return carry.length?null:out;
