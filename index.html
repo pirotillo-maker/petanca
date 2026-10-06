@@ -584,10 +584,10 @@ function swissMegaGame(ids,R){
     // Recocido: permite empeorar temporalmente para poder eliminar una
     // repetición de compañero atrapada por la distribución de las partidas.
     for(let it=0;it<iterations;it++){
-      const i=Math.floor(Math.random()*n);
+      let i=Math.floor(Math.random()*n);
       let j=Math.floor(Math.random()*n);
       if(i===j)continue;
-      if(i>j)[i,j]=[j,i];
+      if(i>j){const tmp=i;i=j;j=tmp;}
 
       [order[i],order[j]]=[order[j],order[i]];
       const ns=cost(order);
