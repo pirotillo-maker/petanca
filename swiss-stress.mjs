@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm');
 const html=fs.readFileSync('index.html','utf8');
-const js=html.match(/<script>([\\s\\S]*)<\\/script>/)[1];
+const js=html.substring(html.indexOf('<script>')+8,html.lastIndexOf('</script>'));
 const el=()=>new Proxy({classList:{add(){},remove(){}},style:{}},{get:(o,p)=>p in o?o[p]:p==='value'?'':p==='checked'?false:p==='classList'?o.classList:p==='querySelectorAll'?()=>[]:()=>{}});
 const ctx={console,Math,Date,Set,Map,JSON,Promise,parseInt,parseFloat,isNaN,Infinity,NaN,alert(){},confirm(){return true},localStorage:{getItem(){return null},setItem(){}},document:{querySelectorAll(){return []},getElementById(){return el()}}};
 vm.createContext(ctx); vm.runInContext(js,ctx,{timeout:2000});
