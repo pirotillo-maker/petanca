@@ -606,7 +606,12 @@ function swissMegaGame(ids,R){
         [order[i],order[j]]=[order[j],order[i]];
         const ns=cost(order);
         const curV=scoreValue(cur),newV=scoreValue(ns);
-        const temp=Math.max(5,900*(1-step/steps));
+        // Para escapar de un mínimo local podemos tener que aceptar temporalmente
+        // una repetición de compañero. Como repeatPartner pesa 1e8 en scoreValue,
+        // una temperatura de 900 hacía que esa salida fuese matemáticamente
+        // prácticamente imposible: el algoritmo decía tener "annealing", pero
+        // en realidad nunca podía cruzar ese valle.
+        const temp=Math.max(1000,150000000*(1-step/steps));
         if(newV<curV || Math.random()<Math.exp((curV-newV)/temp)){
           cur=ns;
         }else{
