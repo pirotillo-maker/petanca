@@ -384,15 +384,13 @@ function swissGroups(ids){
   return carry.length?null:out;
 }
 function swissGroupCost(order,types,R){
-  let sameScoreTeammate=0,repeatPartner=0,reverseRelation=0,repeatRival=0,k=0;
+  let repeatPartner=0,reverseRelation=0,repeatRival=0,sameScoreTeammate=0,k=0;
   const pm=new Map(S.players.map(p=>[p.id,p]));
   for(const z of types){
     const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
     for(const team of [A,B])for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++){
       const wi=swissPoints(pm.get(team[i])),wj=swissPoints(pm.get(team[j])),q=key(team[i],team[j]);
       if(wi===wj)sameScoreTeammate++;
-      // Un par puede haber sido compañero y rival en rondas distintas:
-      // contabilizamos ambos conflictos, sin ocultar la inversión.
       if(R.tm.has(q))repeatPartner++;
       if(R.rv.has(q))reverseRelation++;
     }
@@ -402,9 +400,15 @@ function swissGroupCost(order,types,R){
       if(R.rv.has(q))repeatRival++;
     }
   }
-  // La regla principal es no invertir relaciones previas en ninguno de los
-  // sentidos. Después se evita repetir compañero y, por último, rival.
-  return [reverseRelation,repeatPartner,repeatRival,sameScoreTeammate];
+  // PRIORIDAD REAL DEL SUIZO:
+  // 1) no repetir compañero;
+  // 2) no convertir una relación anterior (compañero/rival) en rival/compañero;
+  // 3) no repetir rival;
+  // 4) evitar juntar jugadores del mismo marcador como compañeros.
+  // El antiguo motor ponía "reverseRelation" por delante de "repeatPartner",
+  // lo que podía conservar una repetición de compañero para evitar un cruce
+  // histórico menos importante. Eso es justo lo que queremos corregir.
+  return [repeatPartner,reverseRelation,repeatRival,sameScoreTeammate];
 }
 function swissGroupGame(ids,R){
   const n=ids.length;
@@ -444,9 +448,10 @@ function swissGameScore(game,pm){
   return {min,max,gap:max-min};
 }
 function swissImprovePools(pools,R,pm){
-  // Mejora dirigida con caché: el historial R no cambia durante una ronda,
-  // por lo que una misma composición de jugadores siempre tiene la misma
-  // solución/coste. Esto evita resolver decenas de veces la misma partida.
+  // Optimización GLOBAL entre las partidas que pertenecen al mismo marcador.
+  // El motor anterior hacía muy pocos intercambios y solo miraba conflictos
+  // locales; eso podía dejar una repetición de compañero aunque existiera una
+  // redistribución mejor en otra partida del mismo grupo.
   const cache=new Map();
   const solve=p=>{
     const k=p.slice().sort().join('|');
@@ -455,59 +460,72 @@ function swissImprovePools(pools,R,pm){
   };
   const cost=g=>g?swissGroupCost(g.teams.flat(),[g.teams.flat().length],R):[999999,999999,999999,999999];
   const add=(a,b)=>a.map((v,i)=>v+b[i]);
-  const solved=pools.map(solve),costs=solved.map(cost);
-  const playerConflict=(id,pool)=>{
-    for(const other of pool)if(other!==id){const q=key(id,other);if(R.tm.has(q)||R.rv.has(q))return true;}
-    return false;
-  };
-  for(let pass=0;pass<4;pass++){
+  const scoreOf=id=>swissPoints(pm.get(id));
+
+  function poolScore(pool){
+    const s=new Set(pool.map(scoreOf));
+    return s.size===1?[...s][0]:null;
+  }
+
+  let solved=pools.map(p=>solve(p));
+  let costs=solved.map(cost);
+
+  // Hasta 30 pasadas. En cada pasada buscamos el mejor intercambio entre
+  // cualquier par de partidas del mismo nivel. No exigimos que los jugadores
+  // intercambiados tengan exactamente el mismo historial: solo su puntuación,
+  // que es la condición que mantiene el emparejamiento Swiss por nivel.
+  for(let pass=0;pass<30;pass++){
     let bestMove=null,bestDelta=null;
-    const conflictPools=[];
-    for(let i=0;i<pools.length;i++){
-      const ids=pools[i], ax=[];
-      for(let x=0;x<ids.length;x++)if(playerConflict(ids[x],ids))ax.push(x);
-      conflictPools.push(ax);
-    }
+
     for(let i=0;i<pools.length;i++)for(let j=i+1;j<pools.length;j++){
-      const A=pools[i],B=pools[j], ax=conflictPools[i], bx=conflictPools[j];
-      if(!ax.length&&!bx.length)continue;
-      // Primero probamos conflictivos contra conflictivos; si no hay mejora,
-      // permitimos completar con cualquiera del otro grupo.
-      const aa=ax.length?ax:[...A.keys()], bb=bx.length?bx:[...B.keys()];
-      for(const x of aa)for(const y of bb){
-        const ai=A[x],bi=B[y];
-        if(swissPoints(pm.get(ai))!==swissPoints(pm.get(bi)))continue;
+      if(poolScore(pools[i])!==poolScore(pools[j]))continue;
+
+      const A=pools[i],B=pools[j];
+      const base=add(costs[i],costs[j]);
+
+      // Primero todos los intercambios simples. Esto es barato porque cada
+      // partida tiene como máximo 6 jugadores.
+      for(let x=0;x<A.length;x++)for(let y=0;y<B.length;y++){
         [A[x],B[y]]=[B[y],A[x]];
         const ga=solve(A),gb=solve(B);
         [A[x],B[y]]=[B[y],A[x]];
         if(!ga||!gb)continue;
-        const cand=add(cost(ga),cost(gb)),base=add(costs[i],costs[j]);
+        const cand=add(cost(ga),cost(gb));
         if(lexBetter(cand,base)&&(!bestDelta||lexBetter(cand,bestDelta))){
-          bestDelta=cand;bestMove={i,j,x,y,ga,gb};
+          bestDelta=cand;bestMove={i,j,x,y,ga,gb,double:false};
         }
       }
-      // Dos intercambios coordinados: permiten salir de mínimos locales.
-      // Limitamos la búsqueda a jugadores conflictivos para no disparar el coste.
-      for(let ai=0;ai<aa.length;ai++)for(let aj=ai+1;aj<aa.length;aj++)
-      for(let bi=0;bi<bb.length;bi++)for(let bj=bi+1;bj<bb.length;bj++){
-        const x1=aa[ai],x2=aa[aj],y1=bb[bi],y2=bb[bj];
-        const A1=A[x1],A2=A[x2],B1=B[y1],B2=B[y2];
-        if(swissPoints(pm.get(A1))!==swissPoints(pm.get(B1))||swissPoints(pm.get(A2))!==swissPoints(pm.get(B2)))continue;
-        [A[x1],B[y1]]=[B[y1],A[x1]];[A[x2],B[y2]]=[B[y2],A[x2]];
+
+      // Intercambio doble: útil cuando ningún movimiento simple mejora porque
+      // dos jugadores conflictivos están "encerrados" en sus respectivas
+      // partidas.
+      for(let x=0;x<A.length;x++)for(let x2=x+1;x2<A.length;x2++)
+      for(let y=0;y<B.length;y++)for(let y2=y+1;y2<B.length;y2++){
+        if(scoreOf(A[x])!==scoreOf(B[y])||scoreOf(A[x2])!==scoreOf(B[y2]))continue;
+        [A[x],B[y]]=[B[y],A[x]];
+        [A[x2],B[y2]]=[B[y2],A[x2]];
         const ga=solve(A),gb=solve(B);
-        [A[x2],B[y2]]=[B[y2],A[x2]];[A[x1],B[y1]]=[B[y1],A[x1]];
+        [A[x2],B[y2]]=[B[y2],A[x2]];
+        [A[x],B[y]]=[B[y],A[x]];
         if(!ga||!gb)continue;
-        const cand=add(cost(ga),cost(gb)),base=add(costs[i],costs[j]);
+        const cand=add(cost(ga),cost(gb));
         if(lexBetter(cand,base)&&(!bestDelta||lexBetter(cand,bestDelta))){
-          bestDelta=cand;bestMove={i,j,x:x1,y:y1,x2,y2,ga,gb,double:true};
+          bestDelta=cand;bestMove={i,j,x,y,x2,y2,ga,gb,double:true};
         }
       }
     }
+
     if(!bestMove)break;
-    const {i,j,x,y,x2,y2,ga,gb,double}=bestMove,A=pools[i],B=pools[j];
+    const {i,j,x,y,x2,y2,ga,gb,double}=bestMove;
+    const A=pools[i],B=pools[j];
     [A[x],B[y]]=[B[y],A[x]];
     if(double)[A[x2],B[y2]]=[B[y2],A[x2]];
-    solved[i]=ga;solved[j]=gb;costs[i]=cost(ga);costs[j]=cost(gb);
+    solved[i]=ga;solved[j]=gb;
+    costs[i]=cost(ga);costs[j]=cost(gb);
+
+    // Si ya no queda ninguna repetición de compañero en las partidas
+    // resueltas, no necesitamos seguir moviendo jugadores.
+    if(costs.reduce((s,c)=>s+c[0],0)===0)break;
   }
   return pools;
 }
