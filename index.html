@@ -353,7 +353,7 @@ function swissGroups(ids){
     buckets.get(w).push(id);
   }
   const wins=[...buckets.keys()].sort((a,b)=>b-a);
-  for(const w of wins)buckets.get(w).sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
+  for(const w of wins)buckets.set(w,sh(buckets.get(w)).sort((a,b)=>compareSwiss(pm.get(a),pm.get(b))));
 
   const nextRound=S.roundsData.length+1;
   const work=wins.map(w=>buckets.get(w).slice());
