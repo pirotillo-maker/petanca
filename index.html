@@ -503,140 +503,132 @@ function swissGroupCost(order,types,R){
   return [repeatPartner,reverseRelation,repeatRival,sameScoreTeammate];
 }
 function swissMegaGame(ids,R){
+  /*
+   * Motor global del bloque Swiss.
+   *
+   * Importante: aquí NO construimos los equipos uno a uno. Eso podía crear
+   * un mínimo local: el primer equipo aparentemente limpio podía consumir
+   * justo los jugadores que hacían imposible el resto de la partición.
+   *
+   * Como todos los jugadores de este bloque tienen el mismo marcador,
+   * podemos optimizar directamente el orden completo y después cortar según
+   * la composición matemática. La prioridad es estricta:
+   *   1. cero compañeros repetidos;
+   *   2. evitar invertir relaciones históricas;
+   *   3. evitar rivales repetidos;
+   *   4. evitar compañeros del mismo marcador (solo desempate).
+   */
   const n=ids.length,types=composition(n);
   if(!types)return null;
 
-  function pairForbidden(a,b){
-    const q=key(a,b);
-    return R.tm.has(q);
-  }
-  function pairPenalty(a,b){
-    const q=key(a,b),p=R.tm.has(q)?100:0,rv=R.rv.has(q)?20:0;
-    return p+rv;
-  }
-  function makeTeams(){
-    const sizes=[];
+  function makeGames(order){
+    let k=0,games=[];
     for(const z of types){
       const [as,bs]=gameShape(z);
-      sizes.push(as,bs);
+      games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});
+      k+=z;
     }
-    const left0=ids.slice();
+    return games;
+  }
 
-    for(let attempt=0;attempt<120;attempt++){
-      let left=sh(left0),teams=[],ok=true;
-      for(const size of sizes){
-        let best=null,bestScore=Infinity;
-        const tries=Math.min(100,left.length*3+30);
-        for(let t=0;t<tries;t++){
-          const cand=sh(left).slice(0,size);
-          let clean=true,score=0;
-          for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
-            if(R.tm.has(key(cand[i],cand[j])))clean=false;
-            score+=R.tm.has(key(cand[i],cand[j]))?1000:0;
-          }
-          if(clean){best=cand;break;}
-          if(score<bestScore){bestScore=score;best=cand;}
+  function cost(order){
+    return swissGroupCost(order,types,R);
+  }
+
+  function improve(order,score,passes){
+    let changed=true;
+    for(let pass=0;pass<passes&&changed;pass++){
+      changed=false;
+      let bestScore=score,bestI=-1,bestJ=-1;
+
+      /*
+       * Para bloques pequeños hacemos todos los intercambios. Para bloques
+       * grandes mezclamos una lista completa de intercambios; así seguimos
+       * teniendo una búsqueda amplia sin disparar el tiempo de generación.
+       */
+      const moves=[];
+      if(n<=50){
+        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)moves.push([i,j]);
+        for(let i=moves.length-1;i>0;i--){
+          const j=Math.floor(Math.random()*(i+1));
+          [moves[i],moves[j]]=[moves[j],moves[i]];
         }
-        if(!best||best.some(id=>!left.includes(id))){ok=false;break;}
-        // Only accept a team with no repeated historical partner.
-        let clean=true;
-        for(let i=0;i<best.length;i++)for(let j=i+1;j<best.length;j++)
-          if(R.tm.has(key(best[i],best[j])))clean=false;
-        if(!clean){ok=false;break;}
-        const used=new Set(best);
-        left=left.filter(id=>!used.has(id));
-        teams.push(best);
-      }
-      if(ok&&left.length===0)return teams;
-    }
-    // Segundo nivel: si la partición estricta no apareció, buscamos la
-    // partición completa con MENOR número posible de compañeros repetidos.
-    // Esto evita bloquear una ronda por culpa del azar del constructor.
-    let best=null,bestRepeat=Infinity;
-    for(let attempt=0;attempt<300;attempt++){
-      const order=sh(left0),teams=[],sizes2=sizes.slice();
-      let k=0,reps=0;
-      for(const size of sizes2){
-        const team=order.slice(k,k+size);k+=size;
-        for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)
-          if(R.tm.has(key(team[i],team[j])))reps++;
-        teams.push(team);
-      }
-      if(reps<bestRepeat){bestRepeat=reps;best=teams;}
-      if(bestRepeat===0)break;
-    }
-
-    // Reparación local: intercambiar jugadores entre equipos para eliminar
-    // repeticiones de compañero sin cambiar la composición de las partidas.
-    if(best&&bestRepeat>0){
-      const scoreTeams=()=>best.reduce((sum,team)=>{
-        for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)
-          if(R.tm.has(key(team[i],team[j])))sum++;
-        return sum;
-      },0);
-
-      // Primero escalada local exhaustiva.
-      let improved=true;
-      while(improved&&bestRepeat>0){
-        improved=false;
-        outer:
-        for(let a=0;a<best.length;a++)for(let ia=0;ia<best[a].length;ia++){
-          for(let b=a+1;b<best.length;b++)for(let ib=0;ib<best[b].length;ib++){
-            [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
-            const reps2=scoreTeams();
-            if(reps2<bestRepeat){
-              bestRepeat=reps2;improved=true;
-              if(bestRepeat===0)break outer;
-            }else{
-              [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
-            }
-          }
+      }else{
+        const count=Math.min(n*12,700);
+        for(let q=0;q<count;q++){
+          const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
+          if(i!==j)moves.push(i<j?[i,j]:[j,i]);
         }
       }
 
+      for(const [i,j] of moves){
+        [order[i],order[j]]=[order[j],order[i]];
+        const ns=cost(order);
+        [order[i],order[j]]=[order[j],order[i]];
+        if(lexBetter(ns,bestScore)){
+          bestScore=ns;bestI=i;bestJ=j;
+        }
+      }
+
+      if(bestI>=0){
+        [order[bestI],order[bestJ]]=[order[bestJ],order[bestI]];
+        score=bestScore;changed=true;
+      }
     }
-    return best;
+    return score;
   }
 
-  function matchTeams(teams){
-    const games=[],unused=teams.slice();
-    let idx=0;
-    for(const z of types){
-      const count=z===4?2:2;
-      const local=unused.splice(0,count);
-      if(local.length!==2)return null;
-      const A=local[0],B=local[1];
-      games.push({teams:[A,B]});
-      idx++;
-    }
-    // Improve opponent assignment by swaps while preserving teammates.
-    let best=games,bestCost=swissGroupCost(games.flatMap(g=>g.teams).flat(),types,R);
-    for(let pass=0;pass<120;pass++){
-      const a=Math.floor(Math.random()*games.length),b=Math.floor(Math.random()*games.length);
-      if(a===b)continue;
-      const A=games[a],B=games[b];
-      const old=bestCost;
-      [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
-      const order=games.flatMap(g=>g.teams).flat();
-      const ns=swissGroupCost(order,types,R);
-      if(lexBetter(ns,old))bestCost=ns;
-      else [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
-      if(bestCost[2]===0&&bestCost[3]===0&&bestCost[4]===0)break;
-    }
-    return {games,score:bestCost};
+  function scoreValue(s){
+    return s[0]*100000000+s[1]*100000+s[2]*100+s[3];
   }
 
-  let best=null,bestScore=null;
-  const attempts=(S.roundsData.length+1===4)?(n<=30?35:n<=45?28:n<=60?18:12):(n<=30?20:n<=45?15:n<=60?10:7);
+  let bestOrder=null,bestScore=null;
+  const r4=S.roundsData.length+1===4;
+  const attempts=n<=30?(r4?80:50):n<=45?(r4?70:45):n<=60?(r4?45:30):25;
+
   for(let a=0;a<attempts;a++){
-    const teams=makeTeams();
-    if(!teams)continue;
-    const game=matchTeams(teams);
-    if(!game)continue;
-    if(lexBetter(game.score,bestScore)){best=game;bestScore=game.score;}
-    if(bestScore&&bestScore[2]===0&&bestScore[3]===0&&bestScore[4]===0)break;
+    let order=sh(ids),score=cost(order);
+
+    // Primero descenso local exacto.
+    score=improve(order,score,n<=45?5:4);
+
+    /*
+     * Si quedan compañeros repetidos, hacemos una pequeña búsqueda con
+     * temperatura. A diferencia del constructor anterior, aquí un movimiento
+     * temporalmente peor puede sacar al algoritmo de un mínimo local.
+     */
+    if(score[0]>0){
+      const steps=n<=45?900:650;
+      let cur=score;
+      for(let step=0;step<steps;step++){
+        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
+        if(i===j)continue;
+        [order[i],order[j]]=[order[j],order[i]];
+        const ns=cost(order);
+        const curV=scoreValue(cur),newV=scoreValue(ns);
+        const temp=Math.max(5,900*(1-step/steps));
+        if(newV<curV || Math.random()<Math.exp((curV-newV)/temp)){
+          cur=ns;
+        }else{
+          [order[i],order[j]]=[order[j],order[i]];
+        }
+        if(lexBetter(cur,bestScore)){
+          bestScore=cur.slice();bestOrder=order.slice();
+        }
+        if(cur[0]===0&&cur[1]===0&&cur[2]===0)break;
+      }
+      score=improve(order,cur,n<=45?5:4);
+    }
+
+    if(lexBetter(score,bestScore)){
+      bestScore=score;bestOrder=order.slice();
+    }
+
+    if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0&&bestScore[3]===0)break;
   }
-  return best;
+
+  if(!bestOrder)return null;
+  return {games:makeGames(bestOrder),score:bestScore};
 }
 
 function swissGroupGame(ids,R){
