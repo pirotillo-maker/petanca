@@ -569,6 +569,13 @@ function swissMegaGame(ids,R){
     // Reparación local: intercambiar jugadores entre equipos para eliminar
     // repeticiones de compañero sin cambiar la composición de las partidas.
     if(best&&bestRepeat>0){
+      const scoreTeams=()=>best.reduce((sum,team)=>{
+        for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)
+          if(R.tm.has(key(team[i],team[j])))sum++;
+        return sum;
+      },0);
+
+      // Primero escalada local exhaustiva.
       let improved=true;
       while(improved&&bestRepeat>0){
         improved=false;
@@ -576,9 +583,7 @@ function swissMegaGame(ids,R){
         for(let a=0;a<best.length;a++)for(let ia=0;ia<best[a].length;ia++){
           for(let b=a+1;b<best.length;b++)for(let ib=0;ib<best[b].length;ib++){
             [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
-            let reps2=0;
-            for(const team of best)for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)
-              if(R.tm.has(key(team[i],team[j])))reps2++;
+            const reps2=scoreTeams();
             if(reps2<bestRepeat){
               bestRepeat=reps2;improved=true;
               if(bestRepeat===0)break outer;
@@ -586,6 +591,23 @@ function swissMegaGame(ids,R){
               [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
             }
           }
+        }
+      }
+
+      // Si queda un conflicto, permitimos movimientos neutrales durante un
+      // breve recorrido aleatorio para escapar de mínimos locales.
+      for(let z=0;z<900&&bestRepeat>0;z++){
+        const a=Math.floor(Math.random()*best.length);
+        let b=Math.floor(Math.random()*best.length);
+        if(a===b)continue;
+        const ia=Math.floor(Math.random()*best[a].length);
+        const ib=Math.floor(Math.random()*best[b].length);
+        [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
+        const reps2=scoreTeams();
+        if(reps2<=bestRepeat || Math.random()<0.015){
+          bestRepeat=reps2;
+        }else{
+          [best[a][ia],best[b][ib]]=[best[b][ib],best[a][ia]];
         }
       }
     }
