@@ -520,50 +520,34 @@ function swissMegaGame(ids,R){
       const [as,bs]=gameShape(z);
       sizes.push(as,bs);
     }
+    const left0=ids.slice();
 
-    function clean(a,b){return !R.tm.has(key(a,b));}
-    function build(){
-      let left=sh(ids),teams=[];
+    for(let attempt=0;attempt<120;attempt++){
+      let left=sh(left0),teams=[],ok=true;
       for(const size of sizes){
-        if(left.length<size)return null;
-
-        // El jugador con menos compañeros posibles es el ancla.
-        let anchor=null,opts=null;
-        for(const id of left){
-          const o=left.filter(x=>x!==id&&clean(id,x));
-          if(opts===null||o.length<opts.length){anchor=id;opts=o;}
-        }
-        if(!anchor||opts.length<size-1)return null;
-
         let best=null,bestScore=Infinity;
-        if(size===2){
-          for(const p of opts){
-            let degree=left.filter(x=>x!==anchor&&x!==p&&clean(p,x)).length;
-            if(degree<bestScore){best=[anchor,p];bestScore=degree;}
+        const tries=Math.min(100,left.length*3+30);
+        for(let t=0;t<tries;t++){
+          const cand=sh(left).slice(0,size);
+          let clean=true,score=0;
+          for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
+            if(R.tm.has(key(cand[i],cand[j])))clean=false;
+            score+=R.tm.has(key(cand[i],cand[j]))?1000:0;
           }
-        }else{
-          for(let i=0;i<opts.length;i++){
-            for(let j=i+1;j<opts.length;j++){
-              const a=opts[i],b=opts[j];
-              if(!clean(a,b))continue;
-              const score=
-                left.filter(x=>x!==anchor&&x!==a&&x!==b&&clean(a,x)).length+
-                left.filter(x=>x!==anchor&&x!==a&&x!==b&&clean(b,x)).length;
-              if(score<bestScore){best=[anchor,a,b];bestScore=score;}
-            }
-          }
+          if(clean){best=cand;break;}
+          if(score<bestScore){bestScore=score;best=cand;}
         }
-        if(!best)return null;
+        if(!best||best.some(id=>!left.includes(id))){ok=false;break;}
+        // Only accept a team with no repeated historical partner.
+        let clean=true;
+        for(let i=0;i<best.length;i++)for(let j=i+1;j<best.length;j++)
+          if(R.tm.has(key(best[i],best[j])))clean=false;
+        if(!clean){ok=false;break;}
         const used=new Set(best);
-        left=left.filter(x=>!used.has(x));
+        left=left.filter(id=>!used.has(id));
         teams.push(best);
       }
-      return left.length?null:teams;
-    }
-
-    for(let attempt=0;attempt<35;attempt++){
-      const got=build();
-      if(got)return got;
+      if(ok&&left.length===0)return teams;
     }
     return null;
   }
@@ -597,7 +581,7 @@ function swissMegaGame(ids,R){
   }
 
   let best=null,bestScore=null;
-  const attempts=n<=30?80:n<=45?60:n<=60?45:30;
+  const attempts=n<=30?20:n<=45?15:n<=60?10:7;
   for(let a=0;a<attempts;a++){
     const teams=makeTeams();
     if(!teams)continue;
