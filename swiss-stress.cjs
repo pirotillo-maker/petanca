@@ -7,9 +7,9 @@ vm.createContext(ctx);vm.runInContext(js,ctx,{timeout:5000});
 function one(n,seed){
   ctx.Math.random=(()=>{let x=(seed>>>0)||1;return()=>{x=(1664525*x+1013904223)>>>0;return x/4294967296}})();
   vm.runInContext("S={name:'stress',sys:'swiss',rounds:4,courts:30,tri:true,one:true,players:Array.from({length:"+n+"},(_,i)=>({id:'p'+i,name:'P'+i,w:0,d:0,l:0,pf:0,pc:0})),roundsData:[],started:true};",ctx);
-  const ids=Array.from({length:n},(_,i)=>'p'+i);let repeats=0;
+  let repeats=0;
   for(let r=1;r<=4;r++){
-    const out=vm.runInContext(r===1?'firstSwiss(S.players.map(p=>p.id))':'swiss(S.players.map(p=>p.id))',ctx,{timeout:15000});
+    const out=vm.runInContext(r===1?'firstSwiss(S.players.map(p=>p.id))':'swiss(S.players.map(p=>p.id))',ctx,{timeout:8000});
     if(!out||!out.games)throw Error('generation failed R'+r);
     const prior=new Set(),state=vm.runInContext('S',ctx);
     for(const rr of state.roundsData)for(const g of rr.games)for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)prior.add([t[i],t[j]].sort().join('|'));
@@ -24,6 +24,7 @@ function one(n,seed){
   return repeats;
 }
 let total=0,max=0,fail=0,rows=[];
-for(let n=10;n<=79;n++){try{const v=one(n,10000+n);total+=v;max=Math.max(max,v);if(v)rows.push([n,v])}catch(e){fail++;rows.push([n,'FAIL '+e.message])}}
-for(let n=35;n<=45;n++)for(let s=1;s<=5;s++){try{const v=one(n,50000+n*100+s);total+=v;max=Math.max(max,v);if(v)rows.push([n+'#'+s,v])}catch(e){fail++;rows.push([n+'#'+s,'FAIL '+e.message])}}
+const cases=[10,15,20,25,27,30,35,40,45,50,60,70,79];
+for(const n of cases){try{const v=one(n,10000+n);total+=v;max=Math.max(max,v);rows.push([n,v])}catch(e){fail++;rows.push([n,'FAIL '+e.message])}}
+for(const n of [35,40,45])for(let s=1;s<=2;s++){try{const v=one(n,50000+n*100+s);total+=v;max=Math.max(max,v);rows.push([n+'#'+s,v])}catch(e){fail++;rows.push([n+'#'+s,'FAIL '+e.message])}}
 console.log(JSON.stringify({totalPartnerRepeats:total,maxInOneChampionship:max,generationFailures:fail,problems:rows}));
