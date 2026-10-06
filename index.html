@@ -480,7 +480,7 @@ function swissImprovePools(pools,R,pm){
   // cualquier par de partidas del mismo nivel. No exigimos que los jugadores
   // intercambiados tengan exactamente el mismo historial: solo su puntuación,
   // que es la condición que mantiene el emparejamiento Swiss por nivel.
-  for(let pass=0;pass<30;pass++){
+  for(let pass=0;pass<8;pass++){
     let bestMove=null,bestDelta=null;
 
     for(let i=0;i<pools.length;i++)for(let j=i+1;j<pools.length;j++){
@@ -502,23 +502,6 @@ function swissImprovePools(pools,R,pm){
         }
       }
 
-      // Intercambio doble: útil cuando ningún movimiento simple mejora porque
-      // dos jugadores conflictivos están "encerrados" en sus respectivas
-      // partidas.
-      for(let x=0;x<A.length;x++)for(let x2=x+1;x2<A.length;x2++)
-      for(let y=0;y<B.length;y++)for(let y2=y+1;y2<B.length;y2++){
-        if(scoreOf(A[x])!==scoreOf(B[y])||scoreOf(A[x2])!==scoreOf(B[y2]))continue;
-        [A[x],B[y]]=[B[y],A[x]];
-        [A[x2],B[y2]]=[B[y2],A[x2]];
-        const ga=solve(A),gb=solve(B);
-        [A[x2],B[y2]]=[B[y2],A[x2]];
-        [A[x],B[y]]=[B[y],A[x]];
-        if(!ga||!gb)continue;
-        const cand=add(cost(ga),cost(gb));
-        if(lexBetter(cand,base)&&(!bestDelta||lexBetter(cand,bestDelta))){
-          bestDelta=cand;bestMove={i,j,x,y,x2,y2,ga,gb,double:true};
-        }
-      }
     }
 
     if(!bestMove)break;
@@ -539,7 +522,7 @@ function swiss(ids){
   const R=relations(),pm=new Map(S.players.map(p=>[p.id,p]));
   // Varios arranques aleatorios permiten escapar de repartos locales malos.
   // Se conserva siempre la solución con menos conflictos según las prioridades.
-  const attempts=ids.length<=45?18:ids.length<=60?10:6;
+  const attempts=ids.length<=45?8:ids.length<=60?6:4;
   let best=null,bestCost=null;
   for(let attempt=0;attempt<attempts;attempt++){
     const groups=swissGroups(ids);if(!groups)continue;
