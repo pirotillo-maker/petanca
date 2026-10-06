@@ -421,17 +421,17 @@ function swissGroups(ids){
    */
   const counts=work.map(x=>x.length);
   const memo2=new Map();
-  function plan(i,incoming,remaining){
-    const keym=i+'|'+incoming+'|'+remaining.join(',');
+  function plan(i,remaining){
+    const keym=i+'|'+remaining.join(',');
     if(memo2.has(keym))return memo2.get(keym);
-    if(i===remaining.length)return incoming===0?[]:null;
+    if(i===remaining.length)return [];
 
     const maxTake=i+1<remaining.length?remaining[i+1]:0;
     for(let take=0;take<=maxTake;take++){
-      if(!composition(remaining[i]+incoming+take))continue;
+      if(!composition(remaining[i]+take))continue;
       const nr=remaining.slice();
       if(i+1<nr.length)nr[i+1]-=take;
-      const tail=plan(i+1,take,nr);
+      const tail=plan(i+1,nr);
       if(tail!==null){
         const ans=[take].concat(tail);
         memo2.set(keym,ans);
@@ -442,7 +442,7 @@ function swissGroups(ids){
     return null;
   }
 
-  const takePlan=plan(0,0,counts);
+  const takePlan=plan(0,counts);
   if(takePlan===null)return null;
 
   /*
