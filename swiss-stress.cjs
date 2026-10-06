@@ -11,12 +11,12 @@ function one(n,seed){
   for(let r=1;r<=4;r++){
     const out=vm.runInContext(r===1?'firstSwiss(S.players.map(p=>p.id))':'swiss(S.players.map(p=>p.id))',ctx,{timeout:8000});
     if(!out||!out.games)throw Error('generation failed R'+r);
-    const prior=new Set(),state=vm.runInContext('S',ctx);
-    for(const rr of state.roundsData)for(const g of rr.games)for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)prior.add([t[i],t[j]].sort().join('|'));
+    const prior=new Map(),state=vm.runInContext('S',ctx);
+    for(const rr of state.roundsData)for(const g of rr.games)for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)prior.set([t[i],t[j]].sort().join('|'),rr.number);
     const seen=new Set();
     for(const g of out.games)for(const t of g.teams)for(const id of t){if(seen.has(id))throw Error('duplicate');seen.add(id)}
     if(seen.size!==n)throw Error('missing');
-    for(const g of out.games)for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)if(prior.has([t[i],t[j]].sort().join('|'))){repeats++;repeatDetails.push({round:r,a:t[i],b:t[j]});}
+    for(const g of out.games)for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)if(prior.has([t[i],t[j]].sort().join('|'))){repeats++;repeatDetails.push({round:r,previousRound:prior.get([t[i],t[j]].sort().join('|')),a:t[i],b:t[j]});}
     state.roundsData.push({number:r,games:out.games});
     for(const g of out.games){const a=Math.floor(ctx.Math.random()*14),b=Math.floor(ctx.Math.random()*14);g.result={a,b};}
     vm.runInContext("S.players.forEach(p=>{p.w=0;p.pf=0;p.pc=0;p.d=0;p.l=0});for(const rr of S.roundsData)for(const g of rr.games){const a=+g.result.a,b=+g.result.b;g.teams[0].forEach(id=>{let p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b});g.teams[1].forEach(id=>{let p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a});if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}else if(b>a){g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}else g.teams.flat().forEach(id=>S.players.find(x=>x.id===id).d++)}",ctx);
