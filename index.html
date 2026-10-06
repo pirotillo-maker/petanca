@@ -508,7 +508,7 @@ function swissMegaGame(ids,R){
 
   function pairForbidden(a,b){
     const q=key(a,b);
-    return R.tm.has(q)||R.rv.has(q);
+    return R.tm.has(q);
   }
   function pairPenalty(a,b){
     const q=key(a,b),p=R.tm.has(q)?100:0,rv=R.rv.has(q)?20:0;
@@ -527,7 +527,7 @@ function swissMegaGame(ids,R){
           let score=0,ok=true;
           for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
             const q=key(cand[i],cand[j]);
-            if(R.tm.has(q)||R.rv.has(q))ok=false;
+            if(R.tm.has(q))ok=false;
             score+=pairPenalty(cand[i],cand[j]);
           }
           if(ok&&score<bestScore){best=cand;bestScore=score;if(score===0)break;}
