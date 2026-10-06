@@ -515,46 +515,68 @@ function swissMegaGame(ids,R){
     return p+rv;
   }
   function makeTeams(){
-    const left=sh(ids),teams=[];
+    const sizes=[];
     for(const z of types){
       const [as,bs]=gameShape(z);
-      const sizes=as===bs?[as,bs]:[as,bs];
-      for(const size of sizes){
-        let best=null,bestScore=Infinity;
-        const tries=Math.min(180,left.length*3+30);
-        for(let t=0;t<tries;t++){
-          const cand=sh(left).slice(0,size);
-          let score=0,ok=true;
-          for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
-            const q=key(cand[i],cand[j]);
-            if(R.tm.has(q))ok=false;
-            score+=pairPenalty(cand[i],cand[j]);
-          }
-          if(ok&&score<bestScore){best=cand;bestScore=score;if(score===0)break;}
-        }
-        if(!best){
-          // Último recurso: solo si no existe una partición limpia en este
-          // intento, escogemos la combinación con MENOS repeticiones. Esto
-          // evita bloquear el campeonato; la repetición sigue siendo el peor
-          // coste y los intentos posteriores vuelven a buscar cero.
-          let fallback=null,fs=Infinity;
-          for(let t=0;t<Math.min(300,left.length*5+60);t++){
-            const cand=sh(left).slice(0,size);
-            let score=0;
-            for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
-              if(R.tm.has(key(cand[i],cand[j])))score+=1000;
-            }
-            if(score<fs){fs=score;fallback=cand;if(score===0)break;}
-          }
-          best=fallback;
-        }
-        if(!best)return null;
-        const bs=new Set(best);
-        for(let i=left.length-1;i>=0;i--)if(bs.has(left[i]))left.splice(i,1);
-        teams.push(best);
-      }
+      sizes.push(as,bs);
     }
-    return teams.length&&left.length===0?teams:null;
+
+    function compatibleTeam(team){
+      for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++){
+        if(R.tm.has(key(team[i],team[j])))return false;
+      }
+      return true;
+    }
+
+    function search(remaining,si,teams,limit){
+      if(si===sizes.length)return teams;
+      if(limit.count--<=0)return null;
+      const size=sizes[si];
+      if(remaining.length<size)return null;
+
+      // Choose a player with the fewest clean partners. This makes the
+      // backtracking concentrate on the difficult cases instead of greedily
+      // consuming the flexible players first.
+      let anchor=remaining[0],bestChoices=null;
+      for(const id of remaining){
+        const choices=remaining.filter(x=>x!==id&& !R.tm.has(key(id,x)));
+        if(bestChoices===null||choices.length<bestChoices.length){
+          anchor=id;bestChoices=choices;
+        }
+      }
+      if(size===1){
+        const nr=remaining.filter(x=>x!==anchor);
+        return search(nr,si+1,teams.concat([[anchor]]),limit);
+      }
+
+      const candidates=[];
+      if(size===2){
+        for(const p of bestChoices) candidates.push([anchor,p]);
+      }else{
+        for(let i=0;i<bestChoices.length;i++){
+          for(let j=i+1;j<bestChoices.length;j++){
+            const a=bestChoices[i],b=bestChoices[j];
+            if(!R.tm.has(key(a,b)))candidates.push([anchor,a,b]);
+          }
+        }
+      }
+      const shuffled=sh(candidates);
+      for(const team of shuffled){
+        const used=new Set(team),nr=remaining.filter(x=>!used.has(x));
+        const got=search(nr,si+1,teams.concat([team]),limit);
+        if(got)return got;
+      }
+      return null;
+    }
+
+    for(let attempt=0;attempt<80;attempt++){
+      const got=search(sh(ids),0,[],{count:12000});
+      if(got)return got;
+    }
+
+    // If the clean partition is genuinely unavailable, return null and let
+    // the outer Swiss attempts try a different grouping/float configuration.
+    return null;
   }
 
   function matchTeams(teams){
