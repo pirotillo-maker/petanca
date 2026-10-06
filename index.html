@@ -372,7 +372,7 @@ function swissGroups(ids){
       const top=work[topIndex].slice();
       const down=lower.splice(0,2);
       const g=top.concat(down);
-      g.forcedOpposite=[top[0],top[1]];
+      g.forcedOpposite=[top[0],top[1]]; g.swissScore=3; g.swissFixed=true;
       out.push(g);
       work.splice(topIndex,1);
       wins.splice(topIndex,1);
@@ -467,7 +467,7 @@ function swissGroups(ids){
     if(!comp)return null;
     let pos=0;
     for(const z of comp){
-      out.push(current.slice(pos,pos+z));
+      const g=current.slice(pos,pos+z); g.swissScore=w; out.push(g);
       pos+=z;
     }
   }
@@ -501,6 +501,46 @@ function swissGroupCost(order,types,R){
   // histórico menos importante. Eso es justo lo que queremos corregir.
   return [repeatPartner,reverseRelation,repeatRival,sameScoreTeammate];
 }
+function swissMegaGame(ids,R){
+  const n=ids.length,types=composition(n);
+  if(!types)return null;
+  let best=null,bestOrder=null;
+
+  function cost(order){
+    return swissGroupCost(order,types,R);
+  }
+  function improve(order,score){
+    const tries=Math.min(160,Math.max(40,n*2));
+    for(let z=0;z<tries;z++){
+      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
+      if(i===j)continue;
+      [order[i],order[j]]=[order[j],order[i]];
+      const ns=cost(order);
+      if(lexBetter(ns,score))score=ns;
+      else [order[i],order[j]]=[order[j],order[i]];
+      if(score[0]===0&&score[1]===0&&score[2]===0)break;
+    }
+    return score;
+  }
+
+  const attempts=n<=20?160:n<=30?120:n<=45?90:n<=60?65:45;
+  for(let a=0;a<attempts;a++){
+    const order=sh(ids);
+    let score=improve(order,cost(order));
+    if(lexBetter(score,best)){best=score;bestOrder=order.slice()}
+    if(best&&best[0]===0&&best[1]===0&&best[2]===0)break;
+  }
+  if(!bestOrder)return null;
+
+  let k=0,games=[];
+  for(const z of types){
+    const [as,bs]=gameShape(z);
+    games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});
+    k+=z;
+  }
+  return {games,score:best};
+}
+
 function swissGroupGame(ids,R){
   const n=ids.length;
   if(n===2)return {teams:[[ids[0]],[ids[1]]]};
@@ -609,25 +649,48 @@ function swissImprovePools(pools,R,pm){
 }
 function swiss(ids){
   const R=relations(),pm=new Map(S.players.map(p=>[p.id,p]));
-  // Varios arranques aleatorios permiten escapar de repartos locales malos.
-  // Se conserva siempre la solución con menos conflictos según las prioridades.
-  const attempts=ids.length<=45?8:ids.length<=60?6:4;
-  let best=null,bestCost=null;
-  for(let attempt=0;attempt<attempts;attempt++){
-    const groups=swissGroups(ids);if(!groups)continue;
-    const pools=swissImprovePools(groups.map(g=>{const x=g.slice();if(g.forcedOpposite)x.forcedOpposite=g.forcedOpposite.slice();return x;}),R,pm),games=[];
-    let cost=[0,0,0,0];
-    for(const g of pools){
-      const game=swissGroupGame(g,R);if(!game){games.length=0;break;}
-      games.push({teams:game.teams});
-      const c=swissGroupCost(game.teams.flat(),[g.length],R);
-      cost=cost.map((v,i)=>v+c[i]);
+  const groups=swissGroups(ids);
+  if(!groups)return null;
+
+  /*
+   * Los grupos con el mismo marcador se vuelven a unir antes de emparejar.
+   * Así una repetición de compañero no puede quedar escondida entre dos
+   * partidas diferentes del mismo marcador.
+   *
+   * La única excepción son los grupos especiales que ya llevan una estructura
+   * obligatoria (R4: los dos jugadores con 3 victorias deben enfrentarse).
+   */
+  const brackets=[];
+  let current=null;
+  for(const g of groups){
+    if(g.swissFixed){
+      brackets.push(g);
+      current=null;
+      continue;
     }
-    if(!games.length)continue;
-    if(lexBetter(cost,bestCost)){best={games};bestCost=cost;}
-    if(bestCost&&bestCost[0]===0&&bestCost[1]===0&&bestCost[2]===0)break;
+    if(current&&current.swissScore===g.swissScore){
+      const merged=current.concat(g);
+      merged.swissScore=g.swissScore;
+      current=merged;
+      brackets[brackets.length-1]=current;
+    }else{
+      current=g.slice();
+      current.swissScore=g.swissScore;
+      brackets.push(current);
+    }
   }
-  return best;
+
+  let games=[],totalCost=[0,0,0,0];
+  for(const b of brackets){
+    const game=b.forcedOpposite
+      ? swissGroupGame(b,R)
+      : swissMegaGame(b,R);
+    if(!game)return null;
+    games.push(...game.games);
+    const cst=swissGroupCost(game.games.flatMap(g=>g.teams).flat(),composition(b.length),R);
+    totalCost=totalCost.map((v,i)=>v+cst[i]);
+  }
+  return {games};
 }
 function firstSwiss(ids){const types=composition(ids.length);if(!types)return null;const order=sh(ids);let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z}return {games};}
 
