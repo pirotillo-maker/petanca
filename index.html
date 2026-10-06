@@ -532,9 +532,22 @@ function swissMegaGame(ids,R){
           }
           if(ok&&score<bestScore){best=cand;bestScore=score;if(score===0)break;}
         }
-        // No repetimos compañero por diseño. Si este intento no encuentra
-        // un equipo limpio, se descarta la construcción completa y se vuelve
-        // a sortear; no introducimos una repetición "para salir del paso".
+        if(!best){
+          // Último recurso: solo si no existe una partición limpia en este
+          // intento, escogemos la combinación con MENOS repeticiones. Esto
+          // evita bloquear el campeonato; la repetición sigue siendo el peor
+          // coste y los intentos posteriores vuelven a buscar cero.
+          let fallback=null,fs=Infinity;
+          for(let t=0;t<Math.min(300,left.length*5+60);t++){
+            const cand=sh(left).slice(0,size);
+            let score=0;
+            for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
+              if(R.tm.has(key(cand[i],cand[j])))score+=1000;
+            }
+            if(score<fs){fs=score;fallback=cand;if(score===0)break;}
+          }
+          best=fallback;
+        }
         if(!best)return null;
         const bs=new Set(best);
         for(let i=left.length-1;i>=0;i--)if(bs.has(left[i]))left.splice(i,1);
