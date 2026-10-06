@@ -521,61 +521,50 @@ function swissMegaGame(ids,R){
       sizes.push(as,bs);
     }
 
-    function compatibleTeam(team){
-      for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++){
-        if(R.tm.has(key(team[i],team[j])))return false;
-      }
-      return true;
-    }
+    function clean(a,b){return !R.tm.has(key(a,b));}
+    function build(){
+      let left=sh(ids),teams=[];
+      for(const size of sizes){
+        if(left.length<size)return null;
 
-    function search(remaining,si,teams,limit){
-      if(si===sizes.length)return teams;
-      if(limit.count--<=0)return null;
-      const size=sizes[si];
-      if(remaining.length<size)return null;
-
-      // Choose a player with the fewest clean partners. This makes the
-      // backtracking concentrate on the difficult cases instead of greedily
-      // consuming the flexible players first.
-      let anchor=remaining[0],bestChoices=null;
-      for(const id of remaining){
-        const choices=remaining.filter(x=>x!==id&& !R.tm.has(key(id,x)));
-        if(bestChoices===null||choices.length<bestChoices.length){
-          anchor=id;bestChoices=choices;
+        // El jugador con menos compañeros posibles es el ancla.
+        let anchor=null,opts=null;
+        for(const id of left){
+          const o=left.filter(x=>x!==id&&clean(id,x));
+          if(opts===null||o.length<opts.length){anchor=id;opts=o;}
         }
-      }
-      if(size===1){
-        const nr=remaining.filter(x=>x!==anchor);
-        return search(nr,si+1,teams.concat([[anchor]]),limit);
-      }
+        if(!anchor||opts.length<size-1)return null;
 
-      const candidates=[];
-      if(size===2){
-        for(const p of bestChoices) candidates.push([anchor,p]);
-      }else{
-        for(let i=0;i<bestChoices.length;i++){
-          for(let j=i+1;j<bestChoices.length;j++){
-            const a=bestChoices[i],b=bestChoices[j];
-            if(!R.tm.has(key(a,b)))candidates.push([anchor,a,b]);
+        let best=null,bestScore=Infinity;
+        if(size===2){
+          for(const p of opts){
+            let degree=left.filter(x=>x!==anchor&&x!==p&&clean(p,x)).length;
+            if(degree<bestScore){best=[anchor,p];bestScore=degree;}
+          }
+        }else{
+          for(let i=0;i<opts.length;i++){
+            for(let j=i+1;j<opts.length;j++){
+              const a=opts[i],b=opts[j];
+              if(!clean(a,b))continue;
+              const score=
+                left.filter(x=>x!==anchor&&x!==a&&x!==b&&clean(a,x)).length+
+                left.filter(x=>x!==anchor&&x!==a&&x!==b&&clean(b,x)).length;
+              if(score<bestScore){best=[anchor,a,b];bestScore=score;}
+            }
           }
         }
+        if(!best)return null;
+        const used=new Set(best);
+        left=left.filter(x=>!used.has(x));
+        teams.push(best);
       }
-      const shuffled=sh(candidates);
-      for(const team of shuffled){
-        const used=new Set(team),nr=remaining.filter(x=>!used.has(x));
-        const got=search(nr,si+1,teams.concat([team]),limit);
-        if(got)return got;
-      }
-      return null;
+      return left.length?null:teams;
     }
 
-    for(let attempt=0;attempt<20;attempt++){
-      const got=search(sh(ids),0,[],{count:3000});
+    for(let attempt=0;attempt<35;attempt++){
+      const got=build();
       if(got)return got;
     }
-
-    // If the clean partition is genuinely unavailable, return null and let
-    // the outer Swiss attempts try a different grouping/float configuration.
     return null;
   }
 
