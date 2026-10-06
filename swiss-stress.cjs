@@ -15,9 +15,10 @@ function run(n,seed){
     for(const g of out.games) for(const t of g.teams) for(const id of t){if(seen.has(id)) throw new Error('duplicate player');seen.add(id)}
     if(seen.size!==n) throw new Error('missing player');
     const prior=new Set();
-    for(const rr of ctx.S.roundsData) for(const g of rr.games) for(const t of g.teams) for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++) prior.add([t[i],t[j]].sort().join('|'));
+    const state=vm.runInContext('S',ctx);
+    for(const rr of state.roundsData) for(const g of rr.games) for(const t of g.teams) for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++) prior.add([t[i],t[j]].sort().join('|'));
     for(const g of out.games) for(const t of g.teams) for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++) if(prior.has([t[i],t[j]].sort().join('|'))) violations++;
-    ctx.S.roundsData.push({number:r,games:out.games});
+    state.roundsData.push({number:r,games:out.games});
     for(const g of out.games){const a=Math.floor(Math.random()*14),b=Math.floor(Math.random()*14);g.result={a,b};}
     vm.runInContext("S.players.forEach(p=>Object.assign(p,{w:0,d:0,l:0,pf:0,pc:0}));for(const rr of S.roundsData)for(const g of rr.games){const a=+g.result.a,b=+g.result.b;g.teams[0].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b});g.teams[1].forEach(id=>{const p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a});if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}else if(b>a){g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}else g.teams.flat().forEach(id=>S.players.find(x=>x.id===id).d++);}",ctx);
   }
