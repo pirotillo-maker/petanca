@@ -684,9 +684,9 @@ function swiss(ids){
   let games=[],totalCost=[0,0,0,0];
   for(const b of brackets){
     const game=b.forcedOpposite
-      ? swissGroupGame(b,R)
+      ? {games:[swissGroupGame(b,R)]}
       : swissMegaGame(b,R);
-    if(!game)return null;
+    if(!game||!game.games||!game.games.length)return null;
     games.push(...game.games);
     const cst=swissGroupCost(game.games.flatMap(g=>g.teams).flat(),composition(b.length),R);
     totalCost=totalCost.map((v,i)=>v+cst[i]);
