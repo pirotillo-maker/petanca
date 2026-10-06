@@ -504,19 +504,15 @@ function swissGroupCost(order,types,R){
 }
 function swissMegaGame(ids,R){
   /*
-   * Motor global del bloque Swiss.
+   * Motor Swiss por bloques de puntuación.
+   * Prioridad estricta:
+   *   1) ningún compañero repetido;
+   *   2) no invertir relaciones históricas;
+   *   3) no repetir rival;
+   *   4) evitar compañeros del mismo marcador.
    *
-   * Importante: aquí NO construimos los equipos uno a uno. Eso podía crear
-   * un mínimo local: el primer equipo aparentemente limpio podía consumir
-   * justo los jugadores que hacían imposible el resto de la partición.
-   *
-   * Como todos los jugadores de este bloque tienen el mismo marcador,
-   * podemos optimizar directamente el orden completo y después cortar según
-   * la composición matemática. La prioridad es estricta:
-   *   1. cero compañeros repetidos;
-   *   2. evitar invertir relaciones históricas;
-   *   3. evitar rivales repetidos;
-   *   4. evitar compañeros del mismo marcador (solo desempate).
+   * En lugar de un annealing largo, usamos reinicios + "kicks" cortos.
+   * Esto permite saltar mínimos locales sin multiplicar el tiempo de cálculo.
    */
   const n=ids.length,types=composition(n);
   if(!types)return null;
@@ -531,21 +527,14 @@ function swissMegaGame(ids,R){
     return games;
   }
 
-  function cost(order){
-    return swissGroupCost(order,types,R);
-  }
+  const cost=order=>swissGroupCost(order,types,R);
 
-  function improve(order,score,passes){
-    let changed=true;
-    for(let pass=0;pass<passes&&changed;pass++){
-      changed=false;
+  function improve(order,score){
+    let changed=true,passes=0;
+    while(changed&&passes<8){
+      changed=false;passes++;
       let bestScore=score,bestI=-1,bestJ=-1;
 
-      /*
-       * Para bloques pequeños hacemos todos los intercambios. Para bloques
-       * grandes mezclamos una lista completa de intercambios; así seguimos
-       * teniendo una búsqueda amplia sin disparar el tiempo de generación.
-       */
       const moves=[];
       if(n<=50){
         for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)moves.push([i,j]);
@@ -554,8 +543,7 @@ function swissMegaGame(ids,R){
           [moves[i],moves[j]]=[moves[j],moves[i]];
         }
       }else{
-        const count=Math.min(n*12,700);
-        for(let q=0;q<count;q++){
+        for(let q=0;q<Math.min(n*10,600);q++){
           const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
           if(i!==j)moves.push(i<j?[i,j]:[j,i]);
         }
@@ -574,62 +562,50 @@ function swissMegaGame(ids,R){
         [order[bestI],order[bestJ]]=[order[bestJ],order[bestI]];
         score=bestScore;changed=true;
       }
+      if(score[0]===0)break;
     }
     return score;
   }
 
-  function scoreValue(s){
-    return s[0]*100000000+s[1]*100000+s[2]*100+s[3];
-  }
-
   let bestOrder=null,bestScore=null;
   const r4=S.roundsData.length+1===4;
-  const attempts=n<=30?(r4?80:50):n<=45?(r4?70:45):n<=60?(r4?45:30):25;
+
+  // Bastantes reinicios baratos. R4 recibe algo más porque concentra los
+  // grupos extremos y es donde aparecieron la mayoría de repeticiones.
+  const attempts=n<=30?(r4?45:30):n<=45?(r4?35:25):n<=60?(r4?28:20):18;
 
   for(let a=0;a<attempts;a++){
-    let order=sh(ids),score=cost(order);
-
-    // Primero descenso local exacto.
-    score=improve(order,score,n<=45?5:4);
-
-    /*
-     * Si quedan compañeros repetidos, hacemos una pequeña búsqueda con
-     * temperatura. A diferencia del constructor anterior, aquí un movimiento
-     * temporalmente peor puede sacar al algoritmo de un mínimo local.
-     */
-    if(score[0]>0){
-      const steps=n<=45?900:650;
-      let cur=score;
-      for(let step=0;step<steps;step++){
-        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
-        if(i===j)continue;
-        [order[i],order[j]]=[order[j],order[i]];
-        const ns=cost(order);
-        const curV=scoreValue(cur),newV=scoreValue(ns);
-        // Para escapar de un mínimo local podemos tener que aceptar temporalmente
-        // una repetición de compañero. Como repeatPartner pesa 1e8 en scoreValue,
-        // una temperatura de 900 hacía que esa salida fuese matemáticamente
-        // prácticamente imposible: el algoritmo decía tener "annealing", pero
-        // en realidad nunca podía cruzar ese valle.
-        const temp=Math.max(1000,150000000*(1-step/steps));
-        if(newV<curV || Math.random()<Math.exp((curV-newV)/temp)){
-          cur=ns;
-        }else{
-          [order[i],order[j]]=[order[j],order[i]];
-        }
-        if(lexBetter(cur,bestScore)){
-          bestScore=cur.slice();bestOrder=order.slice();
-        }
-        if(cur[0]===0&&cur[1]===0&&cur[2]===0)break;
-      }
-      score=improve(order,cur,n<=45?5:4);
-    }
+    let order=sh(ids);
+    let score=improve(order,cost(order));
 
     if(lexBetter(score,bestScore)){
       bestScore=score;bestOrder=order.slice();
     }
+    if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
 
-    if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0&&bestScore[3]===0)break;
+    // Kicks: alteramos 2-4 posiciones y volvemos a descender. A diferencia
+    // del annealing anterior, cada kick es barato y no se ejecuta cientos
+    // de veces por intento.
+    const kicks=n<=45?8:6;
+    for(let k=0;k<kicks;k++){
+      const q=order.slice();
+      const swaps=2+(Math.random()<0.35?1:0);
+      for(let z=0;z<swaps;z++){
+        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
+        if(i!==j)[q[i],q[j]]=[q[j],q[i]];
+      }
+
+      let qs=improve(q,cost(q));
+      if(lexBetter(qs,bestScore)){
+        bestScore=qs;bestOrder=q.slice();
+      }
+      order=q;
+      score=qs;
+
+      if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
+    }
+
+    if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
   }
 
   if(!bestOrder)return null;
