@@ -511,7 +511,41 @@ function swissMegaGame(ids,R){
     return swissGroupCost(order,types,R);
   }
   function improve(order,score){
-    const tries=Math.min(300,Math.max(80,n*5));
+    const conflictTries=Math.min(180,Math.max(30,n*3));
+    for(let pass=0;pass<conflictTries;pass++){
+      const conflicts=[],pos=0;
+      let k=0;
+      for(const z of types){
+        const [as,bs]=gameShape(z);
+        const teams=[Array.from({length:as},(_,q)=>k+q),Array.from({length:bs},(_,q)=>k+as+q)];
+        for(const team of teams)for(let a=0;a<team.length;a++)for(let b=a+1;b<team.length;b++){
+          if(R.tm.has(key(order[team[a]],order[team[b]])))conflicts.push([team[a],team[b]]);
+        }
+        k+=z;
+      }
+      if(!conflicts.length)break;
+
+      let bestSwap=null,bestScore=score;
+      for(const [a,b] of conflicts){
+        for(let j=0;j<n;j++){
+          if(j===a||j===b)continue;
+          [order[a],order[j]]=[order[j],order[a]];
+          const ns=cost(order);
+          [order[a],order[j]]=[order[j],order[a]];
+          if(lexBetter(ns,bestScore)){bestScore=ns;bestSwap=[a,j];}
+          [order[b],order[j]]=[order[j],order[b]];
+          const ns2=cost(order);
+          [order[b],order[j]]=[order[j],order[b]];
+          if(lexBetter(ns2,bestScore)){bestScore=ns2;bestSwap=[b,j];}
+        }
+      }
+      if(!bestSwap)break;
+      [order[bestSwap[0]],order[bestSwap[1]]]=[order[bestSwap[1]],order[bestSwap[0]]];
+      score=bestScore;
+      if(score[0]===0)break;
+    }
+
+    const tries=Math.min(120,Math.max(40,n*2));
     for(let z=0;z<tries;z++){
       const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
       if(i===j)continue;
