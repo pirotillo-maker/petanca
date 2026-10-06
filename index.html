@@ -353,7 +353,7 @@ function swissGroups(ids){
     buckets.get(w).push(id);
   }
   const wins=[...buckets.keys()].sort((a,b)=>b-a);
-  for(const w of wins)buckets.set(w,sh(buckets.get(w)).sort((a,b)=>compareSwiss(pm.get(a),pm.get(b))));
+  // Para pertenecer a una categoría solo cuentan las victorias. No ordenar sus integrantes por puntos: la clasificación es independiente del agrupamiento.
 
   const nextRound=S.roundsData.length+1;
   const work=wins.map(w=>buckets.get(w).slice());
@@ -370,7 +370,11 @@ function swissGroups(ids){
       const lower=work[topIndex+1];
       if(lower.length<2)return null;
       const top=work[topIndex].slice();
-      const down=lower.splice(0,2);
+      // La excepción de líderes necesita los dos mejores de la categoría inferior;
+      // la clasificación solo decide esta selección, no la pertenencia a grupos.
+      const down=lower.slice().sort((a,b)=>compareSwiss(pm.get(a),pm.get(b))).slice(0,2);
+      const promotedTop=new Set(down);
+      work[topIndex+1]=lower.filter(id=>!promotedTop.has(id));
       const g=top.concat(down);
       g.forcedOpposite=[top[0],top[1]]; g.swissScore=3; g.swissFixed=true;
       out.push(g);
@@ -458,8 +462,12 @@ function swissGroups(ids){
     const take=takePlan[i]||0;
     if(take){
       if(i+1>=work.length||work[i+1].length<take)return null;
-      work[i+1].sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
-      carry=work[i+1].splice(0,take);
+      // Solo se ordena una copia para elegir los ascendidos mejor clasificados.
+      // El resto de la categoría conserva su pertenencia por victorias, sin reordenación por puntos.
+      const rankedLower=work[i+1].slice().sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
+      carry=rankedLower.slice(0,take);
+      const promoted=new Set(carry);
+      work[i+1]=work[i+1].filter(id=>!promoted.has(id));
       current=current.concat(carry);
       carry=[];
     }
