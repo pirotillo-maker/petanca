@@ -345,11 +345,17 @@ function swissGroups(ids){
   // baja cada categoría, siempre como máximo desde la inmediatamente inferior.
   const pm=new Map(S.players.map(p=>[p.id,p]));
   const buckets=new Map();
+  // Dentro de cada marcador no dejamos el orden al azar: primero se usa
+  // la clasificación actual (victorias -> diferencia -> tantos a favor ->
+  // desempates), y solo los jugadores totalmente empatados conservan un
+  // pequeño componente aleatorio. Así los jugadores fuertes no acaban
+  // sistemáticamente juntos como compañeros.
   for(const id of sh(ids)){
     const w=swissPoints(pm.get(id));
     if(!buckets.has(w))buckets.set(w,[]);
     buckets.get(w).push(id);
   }
+  for(const b of buckets.values())b.sort(compareSwiss);
   const wins=[...buckets.keys()].sort((a,b)=>b-a);
   const counts=wins.map(w=>buckets.get(w).length);
   const memo=new Map();
