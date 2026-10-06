@@ -340,12 +340,12 @@ function swissBuckets(ids){
 }
 function swissGroups(ids){
   /*
-   * SISTEMA SUIZO: primero manda la categoría de victorias.
-   * Cada categoría intenta jugar exclusivamente consigo misma.
-   * Solo cuando no puede formar partidas válidas, baja el número mínimo
-   * imprescindible de jugadores a la categoría inmediatamente inferior.
-   * Los que bajan son SIEMPRE los mejores clasificados de la categoría,
-   * nunca los últimos por accidente.
+   * SISTEMA SUIZO:
+   * - cada marcador forma su propio grupo;
+   * - si el grupo ya puede formar partidas válidas, NO se mueve a nadie;
+   * - si le faltan jugadores, se toma el mínimo imprescindible de la
+   *   categoría inmediatamente inferior;
+   * - siempre se toma al mejor clasificado de esa categoría inferior.
    */
   const pm=new Map(S.players.map(p=>[p.id,p]));
   const buckets=new Map();
@@ -354,47 +354,35 @@ function swissGroups(ids){
     if(!buckets.has(w))buckets.set(w,[]);
     buckets.get(w).push(id);
   }
-
   const wins=[...buckets.keys()].sort((a,b)=>b-a);
-  for(const w of wins){
-    const b=buckets.get(w);
-    b.sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
-  }
+  for(const w of wins)buckets.get(w).sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
 
   const nextRound=S.roundsData.length+1;
   const out=[];
   let carry=[];
 
-  /*
-   * Devuelve la composición que puede jugar un número dado de jugadores.
-   * Buscamos el MÍNIMO número de flotantes necesario: no movemos jugadores
-   * entre categorías por comodidad del algoritmo.
-   */
-  function bestGive(n,forcedMin=0){
-    for(let give=forcedMin;give<=n;give++){
-      const rest=n-give;
-      if(composition(rest))return give;
+  function pullNeeded(n,lowerCount){
+    for(let take=1;take<=lowerCount;take++){
+      if(composition(n+take))return take;
     }
     return null;
   }
 
   for(let i=0;i<wins.length;i++){
     const w=wins[i];
-    const own=buckets.get(w).slice();
-    const current=carry.concat(own);
+    let current=carry.concat(buckets.get(w));
     carry=[];
 
     /*
-     * Caso especial pedido para R4: si el grupo de 3 victorias tiene
-     * exactamente dos jugadores, NO se juega 1x1 ni se les hace compañeros.
-     * Se baja a los dos mejores del grupo de 2 victorias y se enfrentan
-     * los dos jugadores de 3 victorias entre sí.
+     * R4 especial: dos jugadores con 3 victorias se enfrentan entre ellos.
+     * Se bajan los dos mejores del grupo de 2 victorias y se colocan uno
+     * contra cada jugador de 3 victorias. Nunca son compañeros entre sí.
      */
-    const isTopR4=nextRound===4 && w===3 && own.length===2 && i+1<wins.length;
+    const isTopR4=nextRound===4 && w===3 && current.length===2 && i+1<wins.length;
     if(isTopR4){
       const lower=buckets.get(wins[i+1]);
       if(lower&&lower.length>=2){
-        const top=own.slice();
+        const top=current.slice();
         const down=lower.slice(0,2);
         lower.splice(0,2);
         const g=top.concat(down);
@@ -405,38 +393,20 @@ function swissGroups(ids){
     }
 
     /*
-     * Si hemos recibido flotantes de arriba, esos jugadores forman parte
-     * del grupo actual. Se conserva el criterio de categoría: primero se
-     * completa con los propios jugadores y solo lo que sobre baja.
-     *
-     * En el último grupo no existe una categoría inferior. Si la composición
-     * no es posible, se deja que composition(2) use 1x1 cuando esté activado;
-     * si no está activado y matemáticamente no hay solución, gen() lo detecta.
+     * Si el grupo actual no puede cuadrar, NO bajamos a sus jugadores:
+     * subimos el mínimo número necesario desde la categoría inmediatamente
+     * inferior. Esto es la dirección correcta del float.
      */
-    let give=bestGive(current.length);
-    if(give===null){
-      /*
-       * El grupo no puede resolverse ni bajando jugadores (por ser el último
-       * o por la configuración). No fabricamos un emparejamiento inválido.
-       */
-      return null;
-    }
+    if(!composition(current.length)){
+      if(i+1>=wins.length)return null;
+      const lower=buckets.get(wins[i+1]);
+      const take=pullNeeded(current.length,lower.length);
+      if(take===null)return null;
 
-    /*
-     * Los mejores clasificados son los que permanecen en su categoría;
-     * los que bajan son los mejores de la categoría para mantener el espíritu
-     * suizo. Ojo: aquí "mejores" significa los primeros de la clasificación.
-     * Si hay carry, esos jugadores ya vienen de una categoría superior y se
-     * consideran primero al formar la categoría actual.
-     */
-    if(give){
-      const sorted=current.slice().sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
-      const down=sorted.slice(0,give);
-      const downSet=new Set(down);
-      const stay=current.filter(id=>!downSet.has(id));
-      carry=down;
-      current.length=0;
-      current.push(...stay);
+      lower.sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
+      const down=lower.splice(0,take);
+      current=current.concat(down);
+      if(!composition(current.length))return null;
     }
 
     const comp=composition(current.length);
@@ -444,9 +414,8 @@ function swissGroups(ids){
 
     let pos=0;
     for(const z of comp){
-      const g=current.slice(pos,pos+z);
+      out.push(current.slice(pos,pos+z));
       pos+=z;
-      out.push(g);
     }
   }
 
