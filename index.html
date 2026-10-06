@@ -505,75 +505,92 @@ function swissGroupCost(order,types,R){
 function swissMegaGame(ids,R){
   const n=ids.length,types=composition(n);
   if(!types)return null;
-  let best=null,bestOrder=null;
 
-  function cost(order){
-    return swissGroupCost(order,types,R);
+  function pairForbidden(a,b){
+    const q=key(a,b);
+    return R.tm.has(q)||R.rv.has(q);
   }
-  function improve(order,score){
-    const conflictTries=Math.min(180,Math.max(30,n*3));
-    for(let pass=0;pass<conflictTries;pass++){
-      const conflicts=[],pos=0;
-      let k=0;
-      for(const z of types){
-        const [as,bs]=gameShape(z);
-        const teams=[Array.from({length:as},(_,q)=>k+q),Array.from({length:bs},(_,q)=>k+as+q)];
-        for(const team of teams)for(let a=0;a<team.length;a++)for(let b=a+1;b<team.length;b++){
-          if(R.tm.has(key(order[team[a]],order[team[b]])))conflicts.push([team[a],team[b]]);
+  function pairPenalty(a,b){
+    const q=key(a,b),p=R.tm.has(q)?100:0,rv=R.rv.has(q)?20:0;
+    return p+rv;
+  }
+  function makeTeams(){
+    const left=sh(ids),teams=[];
+    for(const z of types){
+      const [as,bs]=gameShape(z);
+      const sizes=as===bs?[as,bs]:[as,bs];
+      for(const size of sizes){
+        let best=null,bestScore=Infinity;
+        const tries=Math.min(180,left.length*3+30);
+        for(let t=0;t<tries;t++){
+          const cand=sh(left).slice(0,size);
+          let score=0,ok=true;
+          for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++){
+            const q=key(cand[i],cand[j]);
+            if(R.tm.has(q)||R.rv.has(q))ok=false;
+            score+=pairPenalty(cand[i],cand[j]);
+          }
+          if(ok&&score<bestScore){best=cand;bestScore=score;if(score===0)break;}
         }
-        k+=z;
-      }
-      if(!conflicts.length)break;
-
-      let bestSwap=null,bestScore=score;
-      for(const [a,b] of conflicts){
-        for(let j=0;j<n;j++){
-          if(j===a||j===b)continue;
-          [order[a],order[j]]=[order[j],order[a]];
-          const ns=cost(order);
-          [order[a],order[j]]=[order[j],order[a]];
-          if(lexBetter(ns,bestScore)){bestScore=ns;bestSwap=[a,j];}
-          [order[b],order[j]]=[order[j],order[b]];
-          const ns2=cost(order);
-          [order[b],order[j]]=[order[j],order[b]];
-          if(lexBetter(ns2,bestScore)){bestScore=ns2;bestSwap=[b,j];}
+        if(!best){
+          // Soft fallback: choose the least-conflicting team, but never duplicate.
+          let fallback=null,fs=Infinity;
+          for(let t=0;t<Math.min(250,left.length*4+50);t++){
+            const cand=sh(left).slice(0,size);
+            let score=0;
+            for(let i=0;i<cand.length;i++)for(let j=i+1;j<cand.length;j++)score+=pairPenalty(cand[i],cand[j]);
+            if(score<fs){fs=score;fallback=cand;}
+          }
+          best=fallback;
         }
+        if(!best)return null;
+        const bs=new Set(best);
+        for(let i=left.length-1;i>=0;i--)if(bs.has(left[i]))left.splice(i,1);
+        teams.push(best);
       }
-      if(!bestSwap)break;
-      [order[bestSwap[0]],order[bestSwap[1]]]=[order[bestSwap[1]],order[bestSwap[0]]];
-      score=bestScore;
-      if(score[0]===0)break;
     }
-
-    const tries=Math.min(120,Math.max(40,n*2));
-    for(let z=0;z<tries;z++){
-      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
-      if(i===j)continue;
-      [order[i],order[j]]=[order[j],order[i]];
-      const ns=cost(order);
-      if(lexBetter(ns,score))score=ns;
-      else [order[i],order[j]]=[order[j],order[i]];
-      if(score[0]===0&&score[1]===0&&score[2]===0)break;
-    }
-    return score;
+    return teams.length&&left.length===0?teams:null;
   }
 
-  const attempts=n<=20?240:n<=30?300:n<=45?260:n<=60?160:100;
+  function matchTeams(teams){
+    const games=[],unused=teams.slice();
+    let idx=0;
+    for(const z of types){
+      const count=z===4?2:2;
+      const local=unused.splice(0,count);
+      if(local.length!==2)return null;
+      const A=local[0],B=local[1];
+      games.push({teams:[A,B]});
+      idx++;
+    }
+    // Improve opponent assignment by swaps while preserving teammates.
+    let best=games,bestCost=roundCost(games.flatMap(g=>g.teams).flat(),types,'swiss',new Map(S.players.map(p=>[p.id,p])));
+    for(let pass=0;pass<120;pass++){
+      const a=Math.floor(Math.random()*games.length),b=Math.floor(Math.random()*games.length);
+      if(a===b)continue;
+      const A=games[a],B=games[b];
+      const old=bestCost;
+      [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
+      const order=games.flatMap(g=>g.teams).flat();
+      const ns=roundCost(order,types,'swiss',new Map(S.players.map(p=>[p.id,p])));
+      if(lexBetter(ns,old))bestCost=ns;
+      else [A.teams[1],B.teams[1]]=[B.teams[1],A.teams[1]];
+      if(bestCost[2]===0&&bestCost[3]===0&&bestCost[4]===0)break;
+    }
+    return {games,score:bestCost};
+  }
+
+  let best=null,bestScore=null;
+  const attempts=n<=30?500:n<=45?350:n<=60?220:140;
   for(let a=0;a<attempts;a++){
-    const order=sh(ids);
-    let score=improve(order,cost(order));
-    if(lexBetter(score,best)){best=score;bestOrder=order.slice()}
-    if(best&&best[0]===0&&best[1]===0&&best[2]===0)break;
+    const teams=makeTeams();
+    if(!teams)continue;
+    const game=matchTeams(teams);
+    if(!game)continue;
+    if(lexBetter(game.score,bestScore)){best=game;bestScore=game.score;}
+    if(bestScore&&bestScore[2]===0&&bestScore[3]===0&&bestScore[4]===0)break;
   }
-  if(!bestOrder)return null;
-
-  let k=0,games=[];
-  for(const z of types){
-    const [as,bs]=gameShape(z);
-    games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});
-    k+=z;
-  }
-  return {games,score:best};
+  return best;
 }
 
 function swissGroupGame(ids,R){
