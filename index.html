@@ -537,6 +537,37 @@ function swissMegaGame(ids,R){
 
   let bestOrder=null,bestScore=null;
 
+  // R1-R3: antes del recocido hacemos una búsqueda específica de
+  // "compañeros nunca repetidos". Es la restricción principal del Swiss y
+  // no debemos dejar que un mínimo local la sacrifique. Una vez encontrada
+  // una distribución con cero repeticiones de compañero, la mejora local
+  // solo acepta cambios lexicográficamente mejores, por lo que ese cero se
+  // conserva.
+  const swissRound=S.roundsData.length+1;
+  if(swissRound<=3){
+    const partnerAttempts=n<=20?1200:n<=40?900:n<=60?700:500;
+    let partnerBest=null,partnerBestOrder=null;
+    for(let a=0;a<partnerAttempts;a++){
+      const q=sh(ids);
+      const qs=cost(q);
+      if(!partnerBest||qs[0]<partnerBest[0]){
+        partnerBest=qs;
+        partnerBestOrder=q.slice();
+      }
+      if(qs[0]===0){
+        bestScore=qs;
+        bestOrder=q.slice();
+        break;
+      }
+    }
+    // Aunque no aparezca un cero inmediatamente, arrancamos el motor global
+    // desde la mejor distribución encontrada en esta fase.
+    if(!bestOrder&&partnerBestOrder){
+      bestOrder=partnerBestOrder;
+      bestScore=partnerBest;
+    }
+  }
+
   // Varias búsquedas independientes. R4 necesita más intentos porque es
   // donde las restricciones acumuladas son más fuertes.
   const r4=S.roundsData.length+1===4;
