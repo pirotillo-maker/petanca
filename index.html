@@ -621,7 +621,7 @@ function swissMegaGame(ids,R){
   }
 
   let best=null,bestScore=null;
-  const attempts=n<=30?20:n<=45?15:n<=60?10:7;
+  const attempts=(S.roundsData.length+1===4)?(n<=30?35:n<=45?28:n<=60?18:12):(n<=30?20:n<=45?15:n<=60?10:7);
   for(let a=0;a<attempts;a++){
     const teams=makeTeams();
     if(!teams)continue;
