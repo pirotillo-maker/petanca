@@ -512,15 +512,18 @@ function swissGroupCost(order,types,R){
 }
 function swissMegaGame(ids,R){
   /*
-   * Motor Swiss por bloques de puntuación.
-   * Prioridad estricta:
-   *   1) ningún compañero repetido;
-   *   2) no invertir relaciones históricas;
-   *   3) no repetir rival;
-   *   4) evitar compañeros del mismo marcador.
+   * Motor Swiss: búsqueda global con escape de mínimos locales.
    *
-   * En lugar de un annealing largo, usamos reinicios + "kicks" cortos.
-   * Esto permite saltar mínimos locales sin multiplicar el tiempo de cálculo.
+   * La prioridad es ABSOLUTA:
+   *   1) compañeros repetidos
+   *   2) invertir una relación histórica
+   *   3) rivales repetidos
+   *   4) compañeros del mismo marcador
+   *
+   * El problema del motor anterior era que solo aceptaba mejoras
+   * lexicográficas. Eso puede bloquearse en un mínimo local: para eliminar
+   * una pareja repetida quizá sea necesario empeorar temporalmente otra
+   * métrica. Aquí usamos recocido simulado ponderado + búsqueda local final.
    */
   const n=ids.length,types=composition(n);
   if(!types)return null;
@@ -537,27 +540,19 @@ function swissMegaGame(ids,R){
 
   const cost=order=>swissGroupCost(order,types,R);
 
-  function improve(order,score){
-    let changed=true,passes=0;
-    while(changed&&passes<8){
-      changed=false;passes++;
+  // La primera componente domina por varios órdenes de magnitud, pero el
+  // algoritmo puede atravesar temporalmente una solución peor para escapar.
+  function value(s){
+    return s[0]*1000000+s[1]*1000+s[2]*10+s[3];
+  }
+
+  function improve(order){
+    let score=cost(order);
+    let changed=true;
+    for(let pass=0;changed&&pass<12;pass++){
+      changed=false;
       let bestScore=score,bestI=-1,bestJ=-1;
-
-      const moves=[];
-      if(n<=50){
-        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)moves.push([i,j]);
-        for(let i=moves.length-1;i>0;i--){
-          const j=Math.floor(Math.random()*(i+1));
-          [moves[i],moves[j]]=[moves[j],moves[i]];
-        }
-      }else{
-        for(let q=0;q<Math.min(n*10,600);q++){
-          const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
-          if(i!==j)moves.push(i<j?[i,j]:[j,i]);
-        }
-      }
-
-      for(const [i,j] of moves){
+      for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
         [order[i],order[j]]=[order[j],order[i]];
         const ns=cost(order);
         [order[i],order[j]]=[order[j],order[i]];
@@ -565,52 +560,59 @@ function swissMegaGame(ids,R){
           bestScore=ns;bestI=i;bestJ=j;
         }
       }
-
       if(bestI>=0){
         [order[bestI],order[bestJ]]=[order[bestJ],order[bestI]];
         score=bestScore;changed=true;
       }
-      if(score[0]===0)break;
+      if(score[0]===0&&score[1]===0&&score[2]===0)break;
     }
     return score;
   }
 
   let bestOrder=null,bestScore=null;
+
+  // Varias búsquedas independientes. R4 necesita más intentos porque es
+  // donde las restricciones acumuladas son más fuertes.
   const r4=S.roundsData.length+1===4;
+  const attempts=n<=25?(r4?18:12):n<=45?(r4?14:10):n<=60?(r4?10:8):7;
+  const iterations=n<=30?2200:n<=45?1800:n<=60?1400:1100;
 
-  // Bastantes reinicios baratos. R4 recibe algo más porque concentra los
-  // grupos extremos y es donde aparecieron la mayoría de repeticiones.
-  const attempts=n<=30?(r4?45:30):n<=45?(r4?35:25):n<=60?(r4?28:20):18;
-
-  for(let a=0;a<attempts;a++){
+  for(let attempt=0;attempt<attempts;attempt++){
     let order=sh(ids);
-    let score=improve(order,cost(order));
+    let score=cost(order);
 
-    if(lexBetter(score,bestScore)){
-      bestScore=score;bestOrder=order.slice();
-    }
-    if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
+    // Recocido: permite empeorar temporalmente para poder eliminar una
+    // repetición de compañero atrapada por la distribución de las partidas.
+    for(let it=0;it<iterations;it++){
+      const i=Math.floor(Math.random()*n);
+      let j=Math.floor(Math.random()*n);
+      if(i===j)continue;
+      if(i>j)[i,j]=[j,i];
 
-    // Kicks: alteramos 2-4 posiciones y volvemos a descender. A diferencia
-    // del annealing anterior, cada kick es barato y no se ejecuta cientos
-    // de veces por intento.
-    const kicks=n<=45?8:6;
-    for(let k=0;k<kicks;k++){
-      const q=order.slice();
-      const swaps=2+(Math.random()<0.35?1:0);
-      for(let z=0;z<swaps;z++){
-        const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
-        if(i!==j)[q[i],q[j]]=[q[j],q[i]];
+      [order[i],order[j]]=[order[j],order[i]];
+      const ns=cost(order);
+      const delta=value(ns)-value(score);
+
+      // Temperatura alta al principio, decreciente después. Las repeticiones
+      // de compañero pesan muchísimo más que cualquier otro criterio.
+      const progress=it/iterations;
+      const temperature=70000*(1-progress)+500;
+      if(delta<=0||Math.random()<Math.exp(-delta/temperature)){
+        score=ns;
+      }else{
+        [order[i],order[j]]=[order[j],order[i]];
       }
 
-      let qs=improve(q,cost(q));
-      if(lexBetter(qs,bestScore)){
-        bestScore=qs;bestOrder=q.slice();
+      if(bestScore===null||lexBetter(score,bestScore)){
+        bestScore=score;bestOrder=order.slice();
       }
-      order=q;
-      score=qs;
-
       if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
+    }
+
+    // Una vez encontrada una zona buena, la pulimos exhaustivamente.
+    score=improve(order);
+    if(bestScore===null||lexBetter(score,bestScore)){
+      bestScore=score;bestOrder=order.slice();
     }
 
     if(bestScore&&bestScore[0]===0&&bestScore[1]===0&&bestScore[2]===0)break;
