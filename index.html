@@ -592,20 +592,36 @@ function swissMegaGame(ids,R){
       const size=teamSizes[teams.length];
       const rem=ids.filter(id=>!used.has(id));
       if(rem.length<size)return false;
-      const anchor=rem[0];
-      const choices=[];
-      function pick(start,left){
-        if(left===0){
-          const team=[anchor,...choices];
-          for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)if(isForbidden(team[i],team[j]))return;
-          // Priorizar equipos con menos conflictos secundarios, pero sin
-          // sacrificar nunca la búsqueda completa del compañero.
-          choices.length&&null;
-          candidates.push(team);return;
-        }
-        for(let i=start;i<=rem.length-left;i++){choices.push(rem[i]);pick(i+1,left-1);choices.pop()}
+      // MRV: elegimos el jugador más difícil de colocar primero, no el
+      // "mejor" clasificado ni simplemente el primero de la lista. Esto hace
+      // que el retroceso detecte antes los callejones sin salida.
+      function compatibleTeam(anchor,others){
+        const team=[anchor,...others];
+        for(let i=0;i<team.length;i++)for(let j=i+1;j<team.length;j++)if(isForbidden(team[i],team[j]))return false;
+        return true;
       }
-      const candidates=[];pick(1,size-1);
+      function allCandidates(anchor,pool,pickN){
+        const out=[],chosen=[];
+        function rec(start,left){
+          if(left===0){if(compatibleTeam(anchor,chosen))out.push([anchor,...chosen]);return}
+          for(let i=start;i<=pool.length-left;i++){
+            chosen.push(pool[i]);rec(i+1,left-1);chosen.pop();
+          }
+        }
+        rec(0,pickN);
+        return out;
+      }
+      let anchor=rem[0],anchorCandidates=null;
+      for(const candidateAnchor of rem){
+        const pool=rem.filter(x=>x!==candidateAnchor);
+        const cs=allCandidates(candidateAnchor,pool,size-1);
+        if(anchorCandidates===null||cs.length<anchorCandidates.length){
+          anchor=candidateAnchor;anchorCandidates=cs;
+          if(cs.length<=1)break;
+        }
+      }
+      const candidates=anchorCandidates||[];
+
       candidates.sort(()=>Math.random()-.5);
       for(const team of candidates){
         team.forEach(x=>used.add(x));teams.push(team);
