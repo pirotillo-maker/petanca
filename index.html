@@ -720,43 +720,54 @@ function swissMegaGame(ids,R){
   return {games:makeGames(bestOrder),score:bestScore};
 }
 
+function swissR4ExtremeGame(ids,R,scoreTag){
+  const pm=new Map(S.players.map(p=>[p.id,p]));
+  const ranked=ids.slice().sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
+  const types=composition(ranked.length);
+  if(!types)return null;
+  const source=scoreTag===0?ranked.slice().reverse():ranked.slice();
+  let pos=0,games=[];
+  for(const z of types){
+    const [as,bs]=gameShape(z),block=source.slice(pos,pos+z);
+    if(block.length!==z)return null;
+    const A=[],B=[];
+    for(let i=0;i<block.length;i++){
+      if(i%2===0)A.push(block[i]); else B.push(block[i]);
+    }
+    if(A.length===as&&B.length===bs) games.push({teams:[A,B]});
+    else games.push({teams:[block.slice(0,as),block.slice(as)]});
+    pos+=z;
+  }
+  const order=games.flatMap(g=>g.teams.flat());
+  return {games,score:swissGroupCost(order,types,R)};
+}
 function swissGroupGame(ids,R){
   const n=ids.length;
   if(n===2)return {teams:[[ids[0]],[ids[1]]]};
-
   const types=composition(n);
   if(!types||types.length!==1)return null;
   const z=types[0],[as,bs]=gameShape(z);
-
   let best=null,bestTeams=null;
   const forced=ids.forcedOpposite||null;
-
   function forcedOK(A,B){
     if(!forced)return true;
     const [x,y]=forced;
-    const ax=A.includes(x),ay=A.includes(y),bx=B.includes(x),by=B.includes(y);
-    return (ax&&by)||(ay&&bx);
+    return (A.includes(x)&&B.includes(y))||(A.includes(y)&&B.includes(x));
   }
-
   function consider(A){
     const set=new Set(A),B=ids.filter(x=>!set.has(x));
     if(!forcedOK(A,B))return;
-    const order=A.concat(B),score=swissGroupCost(order,[z],R);
+    const score=swissGroupCost(A.concat(B),[z],R);
     if(lexBetter(score,best)){best=score;bestTeams=[A,B];}
   }
-
   function choose(start,left,pick){
     if(pick===0){consider(left.slice());return;}
     for(let i=start;i<=n-pick;i++)choose(i+1,left.concat(ids[i]),pick-1);
   }
-
-  if(as===bs)choose(1,[ids[0]],as-1);
-  else choose(0,[],as);
-
+  if(as===bs)choose(1,[ids[0]],as-1); else choose(0,[],as);
   if(!bestTeams)return null;
   return {teams:bestTeams};
-}
-function swissGameScore(game,pm){
+}function swissGameScore(game,pm){
   let min=Infinity,max=-Infinity;
   for(const id of game){const w=swissPoints(pm.get(id));min=Math.min(min,w);max=Math.max(max,w)}
   return {min,max,gap:max-min};
@@ -851,17 +862,17 @@ function swiss(ids){
 
   const games=[];
   for(const b of brackets){
-    const result=b.forcedOpposite
-      ? swissGroupGame(b,R)
-      : swissMegaGame(b,R);
+    let result;
+    const scoreTag=b.swissScore;
+    const isR4=S.roundsData.length+1===4;
+    const isExtreme=isR4&&(scoreTag===3||scoreTag===0);
+    if(isExtreme) result=swissR4ExtremeGame(b,R,scoreTag);
+    else if(b.forcedOpposite) result=swissGroupGame(b,R);
+    else result=swissMegaGame(b,R);
     if(!result)return null;
-    if(b.forcedOpposite){
-      if(!result.teams)return null;
-      games.push({teams:result.teams});
-    }else{
-      if(!result.games||!result.games.length)return null;
-      games.push(...result.games);
-    }
+    if(result.games) games.push(...result.games);
+    else if(result.teams) games.push({teams:result.teams});
+    else return null;
   }
   return {games};
 }
