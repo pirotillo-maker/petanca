@@ -118,77 +118,129 @@ function firstSwiss(ids){
 }
 
 function miniSwissTopBlock(pools, types, R, pWins, topWins) {
-  // Optimiza conjuntamente las primeras partidas que contienen a TODO el grupo top.
-  // Solo incorpora del nivel inferior los jugadores estrictamente necesarios para completar esas partidas.
-  const topCount = pools.reduce((n,p)=>n+p.filter(id=>pWins.get(id)===topWins).length,0);
-  if (!topCount) return null;
+  const topCount=pools.reduce((n,p)=>n+p.filter(id=>pWins.get(id)===topWins).length,0);
+  if(!topCount)return null;
 
-  let blockGames = 0, blockSize = 0;
-  while (blockGames < types.length && blockSize < topCount) {
-    blockSize += types[blockGames++];
+  let blockGames=0,blockSize=0;
+  while(blockGames<types.length&&blockSize<topCount){blockSize+=types[blockGames++];}
+  if(blockSize<topCount)return null;
+
+  const block=[];
+  for(let i=0;i<blockGames;i++)block.push(...pools[i]);
+  if(block.filter(id=>pWins.get(id)===topWins).length!==topCount)return null;
+
+  const localTypes=types.slice(0,blockGames);
+  const rank=new Map(block.map((id,i)=>[id,i]));
+
+  function gameScore(teams){
+    let levelMix=0,rankClose=0;
+    for(const t of teams){
+      for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+        const wi=pWins.get(t[i]),wj=pWins.get(t[j]);
+        if(wi!==wj)levelMix+=1+Math.abs(wi-wj);
+        rankClose+=block.length-Math.abs(rank.get(t[i])-rank.get(t[j]));
+      }
+    }
+    for(const a of teams[0])for(const b of teams[1]){
+      const wi=pWins.get(a),wj=pWins.get(b);
+      if(wi!==wj)levelMix+=0.1*Math.abs(wi-wj);
+    }
+    return evalGameConflict(teams,R)*1000000000+levelMix*1000000+rankClose;
   }
-  if (blockSize < topCount) return null;
 
-  const block = [];
-  for (let i=0;i<blockGames;i++) block.push(...pools[i]);
-  if (block.filter(id=>pWins.get(id)===topWins).length !== topCount) return null;
+  function optionsFor(sub,z){
+    const ids=sub.slice();
+    const out=[];
+    if(z===2){
+      const teams=[[ids[0]],[ids[1]]];
+      out.push({teams,cost:gameScore(teams)});
+    }else if(z===4){
+      const a=ids;
+      const cand=[
+        [[a[0],a[2]],[a[1],a[3]]],
+        [[a[0],a[3]],[a[1],a[2]]],
+        [[a[0],a[1]],[a[2],a[3]]]
+      ];
+      for(const teams of cand)out.push({teams,cost:gameScore(teams)});
+    }else{
+      const splits=z===5?getSplits5(ids):getSplits6(ids);
+      for(const teams of splits)out.push({teams,cost:gameScore(teams)});
+    }
+    out.sort((a,b)=>a.cost-b.cost);
+    return out;
+  }
 
-  // El bloque contiene exactamente todos los top y el mínimo número posible de jugadores
-  // del siguiente nivel. El coste se evalúa sobre TODAS las partidas del bloque a la vez.
-  const localTypes = types.slice(0,blockGames);
-  const scoreOrder = (order) => {
-    let cost = 0, k = 0;
-    for (const z of localTypes) {
-      const [as,bs] = gameShape(z);
-      const teams = [order.slice(k,k+as), order.slice(k+as,k+z)];
-      k += z;
-      cost += evalGameConflict(teams,R);
-      // Penalización fuerte si se mezcla innecesariamente niveles dentro de una pareja/equipo.
-      for (const t of teams) {
-        for (let i=0;i<t.length;i++) for (let j=i+1;j<t.length;j++) {
-          const wi=pWins.get(t[i]), wj=pWins.get(t[j]);
-          if (wi!==wj) cost += 1000000 + Math.abs(wi-wj)*100000;
+  // Para los tamaños habituales del grupo 3-0, búsqueda exacta global.
+  if(block.length<=12){
+    const memo=new Map();
+    function popcount(x){let n=0;while(x){x&=x-1;n++;}return n;}
+    const full=(1<<block.length)-1;
+    function solve(mask,gi){
+      if(mask===full)return {cost:0,games:[]};
+      const mk=mask+'|'+gi;
+      if(memo.has(mk))return memo.get(mk);
+      const z=localTypes[gi];
+      const remaining=[];
+      for(let i=0;i<block.length;i++)if(!(mask&(1<<i)))remaining.push(i);
+      const first=remaining[0];
+      let best=null;
+      function choose(start,left,chosen){
+        if(left===0){
+          if(!chosen.includes(first))return;
+          const ids=chosen.map(i=>block[i]);
+          const opts=optionsFor(ids,z);
+          for(const op of opts){
+            let newMask=mask;
+            for(const i of chosen)newMask|=(1<<i);
+            const tail=solve(newMask,gi+1);
+            if(!tail)continue;
+            const cand={cost:op.cost+tail.cost,games:[{teams:op.teams},...tail.games]};
+            if(!best||cand.cost<best.cost)best=cand;
+          }
+          return;
+        }
+        for(let q=start;q<=remaining.length-left;q++){
+          chosen.push(remaining[q]);
+          choose(q+1,left-1,chosen);
+          chosen.pop();
         }
       }
-      // Enfrentar niveles distintos solo cuando sea necesario para completar el grupo.
-      for (const a of teams[0]) for (const b of teams[1]) {
-        const wi=pWins.get(a), wj=pWins.get(b);
-        if (wi!==wj) cost += 10000 + Math.abs(wi-wj)*1000;
-      }
+      choose(0,z,[]);
+      memo.set(mk,best);
+      return best;
+    }
+    const exact=solve(0,0);
+    if(exact)return {games:exact.games,score:exact.cost,blockGames,blockIds:new Set(block)};
+  }
+
+  // Para bloques mayores de 12, búsqueda heurística rápida; después el bloque queda congelado.
+  const scoreOrder=order=>{
+    let cost=0,k=0;
+    for(const z of localTypes){
+      const [as,bs]=gameShape(z),teams=[order.slice(k,k+as),order.slice(k+as,k+z)];
+      k+=z;cost+=gameScore(teams);
     }
     return cost;
   };
-
-  let best=null,bestOrder=null;
-  const attempts = block.length<=8 ? 180 : block.length<=12 ? 260 : block.length<=16 ? 360 : 240;
-  const steps = block.length<=8 ? 180 : block.length<=12 ? 240 : 320;
-
+  let best=Infinity,bestOrder=null;
+  const attempts=220,steps=280;
   for(let a=0;a<attempts;a++){
-    let order=sh(block);
-    let score=scoreOrder(order);
-    let temp=Math.max(5,score*0.015+20);
-
-    for(let s=0;s<steps;s++){
-      const i=Math.floor(Math.random()*order.length);
-      const j=Math.floor(Math.random()*order.length);
-      if(i===j) continue;
+    let order=sh(block),score=scoreOrder(order),temp=Math.max(10,score*.01+20);
+    for(let step=0;step<steps;step++){
+      const i=Math.floor(Math.random()*order.length),j=Math.floor(Math.random()*order.length);
+      if(i===j)continue;
       [order[i],order[j]]=[order[j],order[i]];
       const ns=scoreOrder(order);
-      if(ns<=score || Math.random()<Math.exp((score-ns)/temp)){
-        score=ns;
-      } else {
-        [order[i],order[j]]=[order[j],order[i]];
-      }
-      temp*=0.9975;
-      if(best===null || score<best){best=score;bestOrder=order.slice();}
-      if(best===0) break;
+      if(ns<=score||Math.random()<Math.exp((score-ns)/temp))score=ns;
+      else [order[i],order[j]]=[order[j],order[i]];
+      temp*=.997;
+      if(score<best){best=score;bestOrder=order.slice();}
+      if(best===0)break;
     }
-    if(best===0) break;
+    if(best===0)break;
   }
-
-  if(!bestOrder) return null;
-  const games=[];
-  let k=0;
+  if(!bestOrder)return null;
+  const games=[];let k=0;
   for(const z of localTypes){
     const [as,bs]=gameShape(z);
     games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});
@@ -196,7 +248,6 @@ function miniSwissTopBlock(pools, types, R, pWins, topWins) {
   }
   return {games,score:best,blockGames,blockIds:new Set(block)};
 }
-
 function swiss(ids) {
   if (!S.roundsData.length) return firstSwiss(ids);
 
