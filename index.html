@@ -604,7 +604,7 @@ function swissR4(ids){
    * ya prioriza dupletas y minimiza tripletas.
    */
   function splitByComposition(arr){
-    const work=sh(arr);
+    const work=arr.slice();
     const types=composition(work.length);
     if(!types)return null;
     const out=[];let k=0;
@@ -677,7 +677,7 @@ function swissR4(ids){
     const pools=splitByComposition(buckets[w]);
     if(!pools)return null;
     for(const pool of pools){
-      const g=swissGroupGame(sh(pool),R);
+      const g=swissGroupGame(pool.slice(),R);
       if(!g)return null;
       games.push({teams:g.teams});
     }
