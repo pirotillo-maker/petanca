@@ -320,4 +320,25 @@ function compareSwiss(a,b){
       if(played){const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;}
     }
   }else{
-    const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore
+    const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;
+  }
+  const as=strengthScore(a.id),bs=strengthScore(b.id);
+  if(bs[0]!==as[0])return bs[0]-as[0];
+  if(bs[1]!==as[1])return bs[1]-as[1];
+  return 0;
+}
+function swissPoints(p){return p?.w||0}
+function move(d){if(S.roundsData.length){vr=Math.max(0,Math.min(S.roundsData.length-1,vr+d));tab('round')}}
+function render(){
+  renderArchive();
+  $('cn').value=S.name||'';$('nr').value=S.rounds;$('nc').value=S.courts;$('tri').checked=S.tri;$('one').checked=S.one;
+  document.querySelectorAll('input[name=sys]').forEach(x=>x.checked=x.value===S.sys);
+  $('ci').innerHTML=S.name?`<b>${esc(S.name)}</b><br>${S.sys==='random'?'🎲 Aleatorio puro':S.sys==='swiss'?'Sistema suizo internacional':'Melé equilibrada'} · ${S.players.length} jugadores · ${S.roundsData.length}/${S.rounds} rondas`:'Todavía no hay campeonato.';
+  $('pl').innerHTML=S.players.length?S.players.map((p,i)=>`<div class="player"><span><b>${i+1}.</b> ${esc(p.name)}</span>${!S.started?`<button class="d" onclick="del('${p.id}')">Eliminar</button>`:''}</div>`).join(''):'<p class="muted">No hay jugadores.</p>';
+  const r=S.roundsData[vr];$('rt').textContent=r?`Ronda ${r.number} / ${S.rounds}`:'Sin ronda';$('ri').textContent=r?(complete(r)?'Resultados guardados':'Pendiente de resultados'):'Genera la primera ronda.';$('games').innerHTML=r?r.games.map((g,i)=>{const a=g.teams[0].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + '),b=g.teams[1].map(id=>S.players.find(p=>p.id===id)?.name||'?').join(' + ');return `<div class="game"><b>Pista ${g.court}</b><div class="team teamname">${esc(a)}</div><input class="score" aria-label="Tantos equipo A, partida ${i+1}" type="number" min="0" data-score="${i}-a" value="${g.result?.a??''}"><div class="versus">VS</div><input class="score" aria-label="Tantos equipo B, partida ${i+1}" type="number" min="0" data-score="${i}-b" value="${g.result?.b??''}"><div class="team teamname">${esc(b)}</div></div>`}).join(''):'';
+  const a=[...S.players].sort(compareSwiss);
+  const hist=a.map(p=>{const cells=[];for(let ri=0;ri<S.roundsData.length;ri++){const rr=S.roundsData[ri],g=rr?.games.find(g=>g.teams.flat().includes(p.id));if(!g){cells.push('—');continue}const my=g.teams.find(t=>t.includes(p.id)),op=g.teams.find(t=>!t.includes(p.id));const partner=my.filter(id=>id!==p.id).map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ')||'Individual';const opponents=op.map(id=>S.players.find(q=>q.id===id)?.name||'?').join(' + ');const res=g.result&&g.result.a!=null?(my===g.teams[0]?`${g.result.a}-${g.result.b}`:`${g.result.b}-${g.result.a}`):'sin resultado';cells.push(`${esc(partner)} · vs ${esc(opponents)} · ${res}`)}return `<tr><td>${esc(p.name)}</td>${cells.map(c=>`<td>${c}</td>`).join('')}</tr>`}).join('');
+  $('st').innerHTML=a.length?`<table><tr><th># Jugador</th><th>Pts</th><th>G</th><th>E</th><th>P</th><th>PF</th><th>PC</th><th>Dif.</th></tr>${a.map((p,i)=>`<tr><td>${i+1}. ${esc(p.name)}</td><td><b>${pts(p)}</b></td><td>${p.w}</td><td>${p.d}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pc}</td><td>${p.pf-p.pc}</td></tr>`).join('')}</table><p class="muted">${S.sys==='swiss'?'Desempates: puntos suizos (victoria=1, empate=0,5) → diferencia de tantos → tantos a favor → enfrentamiento directo cuando procede → fuerza de rivales (puntuación suiza y diferencia de tantos).':'Desempates: victorias → diferencia de tantos → tantos a favor → enfrentamiento directo → fuerza de rivales.'} Si todo coincide, queda empate para resolverlo en el campo.</p><h3>Histórico de partidas</h3><div class="history-table-wrap" style="overflow:auto;max-width:100%;-webkit-overflow-scrolling:touch"><table><tr><th>Jugador</th>${S.roundsData.map(r=>`<th>R${r.number}</th>`).join('')}</tr>${hist}</table></div>`:'Sin jugadores.';
+}
+render();tab('config');
+</script></body></html>
