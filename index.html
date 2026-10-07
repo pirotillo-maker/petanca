@@ -245,10 +245,11 @@ function swiss(ids) {
   if(totalCost===0) return {games:currentGames.map(r=>({teams:r.teams}))};
 
   const numGames=pools.length;
+  const frozenTopGames=top?top.blockGames:0;
   let pass=0, improved=true;
   while(improved && pass<15 && totalCost>0){
     improved=false; pass++;
-    for(let g1=0;g1<numGames;g1++){
+    for(let g1=frozenTopGames;g1<numGames;g1++){
       for(let g2=g1+1;g2<numGames;g2++){
         for(let i1=0;i1<pools[g1].length;i1++){
           for(let i2=0;i2<pools[g2].length;i2++){
