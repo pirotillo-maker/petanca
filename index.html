@@ -160,8 +160,8 @@ function miniSwissTopBlock(pools, types, R, pWins, topWins) {
   };
 
   let best=null,bestOrder=null;
-  const attempts = block.length<=8 ? 1800 : block.length<=12 ? 2600 : block.length<=16 ? 3500 : 2200;
-  const steps = block.length<=8 ? 500 : block.length<=12 ? 800 : 1100;
+  const attempts = block.length<=8 ? 180 : block.length<=12 ? 260 : block.length<=16 ? 360 : 240;
+  const steps = block.length<=8 ? 180 : block.length<=12 ? 240 : 320;
 
   for(let a=0;a<attempts;a++){
     let order=sh(block);
