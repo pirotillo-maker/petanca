@@ -120,86 +120,105 @@ function swiss(ids) {
   const types = composition(N);
   if (!types) return null;
 
-  // Clasificación oficial ordenada por desempates
+  // Clasificación oficial: primero victorias, después los desempates.
   const allRanked = [...S.players]
     .filter(p => ids.includes(p.id))
     .sort(compareSwiss);
 
-  const pWins = new Map(S.players.map(p => [p.id, p.w || 0]));
   const R = relations();
 
-  // 1. Asignación inicial de partidas según la clasificación
-  let pools = [];
-  let idx = 0;
-  for (const z of types) {
-    pools.push(allRanked.slice(idx, idx + z).map(p => p.id));
-    idx += z;
+  /*
+   * SISTEMA SUIZO:
+   * 1) Se separan primero los jugadores por número de victorias.
+   * 2) Los subgrupos se rellenan en orden de clasificación.
+   * 3) Solo se toma del grupo inmediatamente inferior lo estrictamente
+   *    necesario para completar el siguiente tamaño de partida.
+   * 4) Nunca se intercambian jugadores libremente entre grupos de victorias.
+   *
+   * Así, por ejemplo, en R4:
+   *   - los de 3 victorias se procesan primero;
+   *   - si hay 4, juegan 1º+3º contra 2º+4º;
+   *   - si hay 2, se incorporan únicamente 2 del grupo de 2 victorias;
+   *   - los restantes de 2 victorias siguen con su propio grupo.
+   */
+  const buckets = new Map();
+  for (const p of allRanked) {
+    const w = p.w || 0;
+    if (!buckets.has(w)) buckets.set(w, []);
+    buckets.get(w).push(p.id);
   }
 
-  function evalRound(currentPools) {
-    let totalCost = 0;
-    const gameResults = [];
-    for (let g = 0; g < currentPools.length; g++) {
-      const res = bestGamePartition(currentPools[g], R);
-      gameResults.push(res);
-      totalCost += res.cost;
+  const scores = [...buckets.keys()].sort((a,b) => b-a);
+  let scoreIndex = 0;
+  let carry = [];
 
-      // Penalización leve por salto entre niveles de victorias dentro de una misma partida
-      const gameWins = currentPools[g].map(id => pWins.get(id) || 0);
-      const maxW = Math.max(...gameWins), minW = Math.min(...gameWins);
-      totalCost += (maxW - minW) * 5;
-    }
-    return { totalCost, gameResults };
-  }
-
-  let currentEval = evalRound(pools);
-  let bestPools = pools.map(p => [...p]);
-  let bestEval = currentEval;
-
-  if (bestEval.totalCost === 0) {
-    return { games: bestEval.gameResults.map(r => ({ teams: r.teams })) };
-  }
-
-  // 2. Optimizador por Recocido Simulado (Simulated Annealing)
-  const numGames = pools.length;
-  const totalSteps = N <= 20 ? 1500 : N <= 40 ? 3000 : 5000;
-  let temp = 100.0;
-
-  for (let step = 0; step < totalSteps; step++) {
-    if (bestEval.totalCost === 0) break;
-
-    const g1 = Math.floor(Math.random() * numGames);
-    let g2 = Math.floor(Math.random() * numGames);
-    if (g1 === g2) g2 = (g1 + 1) % numGames;
-
-    const i1 = Math.floor(Math.random() * pools[g1].length);
-    const i2 = Math.floor(Math.random() * pools[g2].length);
-
-    const u = pools[g1][i1];
-    const v = pools[g2][i2];
-
-    // Intercambiar u y v entre partidas
-    pools[g1][i1] = v;
-    pools[g2][i2] = u;
-
-    const candidateEval = evalRound(pools);
-    const delta = candidateEval.totalCost - currentEval.totalCost;
-
-    if (delta <= 0 || Math.random() < Math.exp(-delta / temp)) {
-      currentEval = candidateEval;
-      if (currentEval.totalCost < bestEval.totalCost) {
-        bestEval = currentEval;
-        bestPools = pools.map(p => [...p]);
+  function takeFromNextScore(needed) {
+    const out = [];
+    while (needed > 0 && scoreIndex < scores.length) {
+      const score = scores[scoreIndex];
+      const bucket = buckets.get(score) || [];
+      while (bucket.length && needed > 0) {
+        out.push(bucket.shift());
+        needed--;
       }
-    } else {
-      pools[g1][i1] = u;
-      pools[g2][i2] = v;
+      if (!bucket.length) scoreIndex++;
+      else break;
     }
-
-    temp *= 0.997;
+    return out;
   }
 
-  return { games: bestEval.gameResults.map(r => ({ teams: r.teams })) };
+  // Construye exactamente los tamaños de 'composition', respetando
+  // la clasificación por victorias y evitando saltos de más de un nivel.
+  const pools = [];
+  for (const z of types) {
+    const pool = [];
+
+    // El carry procede exclusivamente del grupo de victorias anterior
+    // cuando ese grupo no llenó la partida anterior.
+    if (carry.length) {
+      pool.push(...carry);
+      carry = [];
+    }
+
+    while (pool.length < z) {
+      if (scoreIndex >= scores.length) break;
+      const score = scores[scoreIndex];
+      const bucket = buckets.get(score) || [];
+
+      while (bucket.length && pool.length < z) {
+        pool.push(bucket.shift());
+      }
+
+      if (!bucket.length) scoreIndex++;
+
+      if (pool.length === z) break;
+
+      // Si quedan huecos, solo se promocionan jugadores del siguiente
+      // nivel de victorias, nunca de un nivel más bajo saltándose otro.
+      const needed = z - pool.length;
+      if (needed > 0 && scoreIndex < scores.length) {
+        const promoted = takeFromNextScore(needed);
+        pool.push(...promoted);
+      }
+    }
+
+    if (pool.length !== z) return null;
+    pools.push(pool);
+  }
+
+  /*
+   * Cada pool se resuelve de forma independiente.
+   * No existe recocido global: una mejora dentro de una partida nunca
+   * puede mover a un jugador a otro nivel de victorias.
+   */
+  const games = [];
+  for (const pool of pools) {
+    const res = bestGamePartition(pool, R);
+    if (!res || !res.teams) return null;
+    games.push({ teams: res.teams });
+  }
+
+  return { games };
 }
 
 function fallbackRound(ids){
