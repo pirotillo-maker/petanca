@@ -443,11 +443,6 @@ function swissGroups(ids){
     for(const z of comp){
       const g=current.slice(pos,pos+z);
       g.swissScore=scoreTag;
-      // En R4 los extremos (3 victorias y 0 victorias) son grupos
-      // especialmente pequeños. Si las restricciones históricas hacen
-      // imposible una ronda completamente limpia, permitimos un emparejamiento
-      // cruzado específico para ese subgrupo.
-      g.r4Flexible=nextRound===4&&(scoreTag===3||scoreTag===0);
       out.push(g);
       pos+=z;
     }
@@ -761,37 +756,6 @@ function swissGroupGame(ids,R){
   if(!bestTeams)return null;
   return {teams:bestTeams};
 }
-function swissR4FlexibleGame(ids,R,scoreTag){
-  const pm=new Map(S.players.map(p=>[p.id,p]));
-  const ranked=ids.slice().sort((a,b)=>compareSwiss(pm.get(a),pm.get(b)));
-  const types=composition(ranked.length);
-  if(!types)return null;
-
-  // Plan B exclusivo de R4 para los grupos extremos.
-  // 3 victorias: 1º+3º contra 2º+4º.
-  // 0 victorias: último+antepenúltimo contra penúltimo+anterior al antepenúltimo.
-  // Para tripletas se mantiene la misma lógica: posiciones pares juntas
-  // frente a posiciones impares. Los ascendidos ya forman parte del subgrupo
-  // y se ordenan con la misma clasificación; no se distingue su procedencia.
-  const order=[];
-  let pos=0;
-  for(const z of types){
-    const block=ranked.slice(pos,pos+z);
-    pos+=z;
-    const source=scoreTag===0?block.slice().reverse():block;
-    for(let i=0;i<source.length;i+=2)order.push(source[i]);
-    for(let i=1;i<source.length;i+=2)order.push(source[i]);
-  }
-
-  let k=0,games=[];
-  for(const z of types){
-    const [as,bs]=gameShape(z);
-    games.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});
-    k+=z;
-  }
-  return {games,score:swissGroupCost(order,types,R)};
-}
-
 function swissGameScore(game,pm){
   let min=Infinity,max=-Infinity;
   for(const id of game){const w=swissPoints(pm.get(id));min=Math.min(min,w);max=Math.max(max,w)}
@@ -876,7 +840,6 @@ function swiss(ids){
     }else if(current&&current.swissScore===g.swissScore){
       const merged=current.concat(g);
       merged.swissScore=g.swissScore;
-      merged.r4Flexible=!!current.r4Flexible||!!g.r4Flexible;
       current=merged;
       brackets[brackets.length-1]=current;
     }else{
@@ -888,18 +851,9 @@ function swiss(ids){
 
   const games=[];
   for(const b of brackets){
-    let result;
-    if(b.forcedOpposite){
-      result=swissGroupGame(b,R);
-    }else{
-      result=swissMegaGame(b,R);
-      // R4: primero exigimos una ronda totalmente limpia. Solo cuando el
-      // motor no puede conseguirla, en los grupos extremos de 3/0 victorias
-      // aplicamos el patrón cruzado y relajamos las restricciones históricas.
-      if((!result||!result.games||!result.score||result.score.some(x=>x!==0))&&b.r4Flexible){
-        result=swissR4FlexibleGame(b,R,b.swissScore);
-      }
-    }
+    const result=b.forcedOpposite
+      ? swissGroupGame(b,R)
+      : swissMegaGame(b,R);
     if(!result)return null;
     if(b.forcedOpposite){
       if(!result.teams)return null;
