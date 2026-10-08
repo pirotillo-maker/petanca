@@ -249,60 +249,47 @@ function miniSwissTopBlock(pools, types, R, pWins, topWins) {
   return {games,score:best,blockGames,blockIds:new Set(block)};
 }
 function miniSwissPool(pool, R, pWins) {
-  const n=pool.length, types=[n];
-  if(n===0) return null;
-  function scoreTeams(teams){
-    let mix=0,rankClose=0;
-    for(const t of teams) for(let i=0;i<t.length;i++) for(let j=i+1;j<t.length;j++){
-      const a=pWins.get(t[i]),b=pWins.get(t[j]);
-      if(a!==b) mix+=1+Math.abs(a-b);
-      rankClose+=n-Math.abs(pool.indexOf(t[i])-pool.indexOf(t[j]));
-    }
-    return evalGameConflict(teams,R)*1000000000+mix*1000000+rankClose;
-  }
-  function opts(ids){
-    if(n===2) return [{teams:[[ids[0]],[ids[1]]]}];
-    if(n===4){
-      const a=ids;
-      return [
-        {teams:[[a[0],a[2]],[a[1],a[3]]]},
-        {teams:[[a[0],a[3]],[a[1],a[2]]]},
-        {teams:[[a[0],a[1]],[a[2],a[3]]]}
-      ];
-    }
-    if(n===5||n===6){
-      const ss=n===5?getSplits5(ids):getSplits6(ids);
-      return ss.map(teams=>({teams}));
-    }
-    return null;
+  const n=pool.length, types=composition(n);
+  if(!types)return null;
+  function score(order){
+    return roundCost(order,types,R,'swiss',pWins);
   }
   if(n<=6){
-    let best=null;
-    for(const op of opts(pool)){
-      const c=scoreTeams(op.teams);
-      if(!best||c<best.score)best={games:[{teams:op.teams}],score:c};
+    let best=null,bestScore=null;
+    let candidates=[];
+    if(n===2)candidates=[[[pool[0]],[pool[1]]]];
+    else if(n===4){
+      const p0=pool[0],p1=pool[1],p2=pool[2],p3=pool[3];
+      candidates=[[[p0,p2],[p1,p3]],[[p0,p3],[p1,p2]],[[p0,p1],[p2,p3]]];
+    }else candidates=(n===5?getSplits5(pool):getSplits6(pool));
+    for(const teams of candidates){
+      const order=teams.flat(),s=score(order);
+      if(!bestScore||lexBetter(s,bestScore)){bestScore=s;best=teams;}
     }
-    return best;
+    return best?{games:[{teams:best}],score:bestScore}:null;
   }
-  let best=Infinity,bestOrder=null;
-  const attempts=n<=12?180:n<=20?100:70,steps=n<=12?500:350;
+  let best=null,bestOrder=null;
+  const attempts=n<=12?180:n<=20?120:80;
+  const steps=n<=12?500:350;
   for(let a=0;a<attempts;a++){
-    let order=sh(pool),score=0;
+    let order=sh(pool),s=score(order);
+    let temp=80;
     for(let z=0;z<steps;z++){
       const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
       if(i===j)continue;
       [order[i],order[j]]=[order[j],order[i]];
-      const [as,bs]=gameShape(n);
-      const teams=[order.slice(0,as),order.slice(as,as+n)];
-      const ns=scoreTeams(teams);
-      if(ns<=score||score===0&&z===0||Math.random()<Math.exp((score-ns)/Math.max(10,100*(1-z/steps)))) score=ns;
+      const ns=score(order),sv=s[0]*1000000+s[1]*1000+s[2]*100+s[3]*10+s[4],
+        nv=ns[0]*1000000+ns[1]*1000+ns[2]*100+ns[3]*10+ns[4];
+      if(lexBetter(ns,s)||Math.random()<Math.exp((sv-nv)/temp))s=ns;
       else [order[i],order[j]]=[order[j],order[i]];
-      if(bestOrder===null||score<best){best=score;bestOrder=order.slice();}
+      temp*=.995;
+      if(!best||lexBetter(s,best)){best=s;bestOrder=order.slice();}
     }
   }
   if(!bestOrder)return null;
-  const [as,bs]=gameShape(n);
-  return {games:[{teams:[bestOrder.slice(0,as),bestOrder.slice(as,as+n)]}],score:best};
+  let k=0,games=[];
+  for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}
+  return {games,score:best};
 }
 
 function swiss(ids) {
