@@ -23,8 +23,9 @@ jobs:
 
           const n = Number(process.env.PLAYERS);
           const html = await (await fetch('https://raw.githubusercontent.com/pirotillo-maker/petanca/main/index.html')).text();
-          const m = html.match(/<script>([\\s\\S]*)<\\/script>/);
-          if (!m) throw new Error('No script found');
+          const a = html.indexOf('<script>') + 8;
+          const b = html.lastIndexOf('</script>');
+          if (a < 8 || b < a) throw new Error('No script found');
 
           const dom = new JSDOM(html, { url: 'https://example.com/', runScripts: 'outside-only' });
           const w = dom.window;
