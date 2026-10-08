@@ -29,7 +29,7 @@ jobs:
           const dom = new JSDOM(html, { url: 'https://example.com/', runScripts: 'outside-only' });
           const w = dom.window;
           w.alert=()=>{}; w.confirm=()=>true;
-          const script = m[1];
+          const script = html.slice(a,b);
 
           const harness = `
           (() => {
