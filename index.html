@@ -3,67 +3,168 @@
   const courtCount=Math.max(1,Number(S.courts)||1);
   const courts=Array.from({length:courtCount},(_,i)=>i+1);
   const history=new Map();
+
+  // Historial de pistas por jugador. Las partidas de la ronda actual aún
+  // no están aquí: primero se forman y después se asignan las pistas.
   for(const r of S.roundsData||[])for(const g of (r.games||[])){
     const c=Number(g.court)||1;
-    for(const id of (g.teams||[]).flat())if(!history.has(id))history.set(id,new Set());
-    for(const id of (g.teams||[]).flat())history.get(id).add(c);
+    for(const id of (g.teams||[]).flat()){
+      if(!history.has(id))history.set(id,new Set());
+      history.get(id).add(c);
+    }
   }
 
-  // Costo de asignar una pista a una partida = cuántos jugadores
-  // de esa partida ya jugaron anteriormente en esa pista.
-  const cost=(g,c)=>g.teams.flat().reduce((n,id)=>n+(history.get(id)?.has(c)?1:0),0);
+  // Coste real: número de jugadores de la partida que repetirían pista.
+  const cost=(g,c)=>g.teams.flat().reduce(
+    (n,id)=>n+(history.get(id)?.has(c)?1:0),0
+  );
 
-  // Si hay más partidas que pistas, alguna repetición de pista es inevitable.
-  // En ese caso se reparten las pistas de forma equilibrada y se minimizan
-  // igualmente las repeticiones de jugadores.
-  const loads=new Map(courts.map(c=>[c,0]));
-  const assigned=new Array(games.length);
-  const remaining=games.map((g,i)=>({g,i}));
-  const scoreCandidate=(item,c)=>{
-    const repeat=cost(item.g,c);
-    const load=loads.get(c)||0;
-    return repeat*1000+load*10+Math.random();
-  };
-
-  // Asignamos primero las partidas más "difíciles": las que tienen menos
-  // pistas sin repeticiones. Esto evita que una decisión temprana bloquee
-  // una combinación mejor para el resto.
-  remaining.sort((a,b)=>{
-    const ca=Math.min(...courts.map(c=>cost(a.g,c)));
-    const cb=Math.min(...courts.map(c=>cost(b.g,c)));
-    return ca-cb;
+  // 1) Para cada partida calculamos TODAS sus opciones de coste mínimo.
+  // Esto garantiza que el primer objetivo global sea minimizar el número
+  // total de jugadores que repiten pista. La formación de equipos no cambia.
+  const options=games.map((g,i)=>{
+    const costs=courts.map(c=>({c,v:cost(g,c)}));
+    const min=Math.min(...costs.map(x=>x.v));
+    return {i,g,min,candidates:costs.filter(x=>x.v===min).map(x=>x.c)};
   });
 
-  for(const item of remaining){
-    let best=Infinity,bestCourts=[];
-    for(const c of courts){
-      const v=scoreCandidate(item,c);
-      if(v<best){best=v;bestCourts=[c];}
-      else if(v===best)bestCourts.push(c);
+  const totalMin=options.reduce((n,x)=>n+x.min,0);
+  const loads=new Map(courts.map(c=>[c,0]));
+  const assigned=new Array(games.length);
+
+  // Objetivo secundario: entre asignaciones con el mismo coste mínimo,
+  // repartir las partidas de la forma más uniforme posible.
+  const balanceScore=()=>{
+    const ls=courts.map(c=>loads.get(c)||0);
+    const max=Math.max(...ls),min=Math.min(...ls);
+    const sq=ls.reduce((s,x)=>s+x*x,0);
+    return [max-min,sq,max];
+  };
+  const betterBalance=(a,b)=>{
+    if(!b)return true;
+    for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]<b[i];
+    return false;
+  };
+
+  // Las partidas con menos alternativas se colocan primero.
+  const order=options.slice().sort((a,b)=>{
+    if(a.candidates.length!==b.candidates.length)
+      return a.candidates.length-b.candidates.length;
+    if(a.min!==b.min)return b.min-a.min;
+    return Math.random()-.5;
+  });
+
+  // Varias pasadas aleatorias: como todas las opciones conservan el coste
+  // mínimo individual, nunca sacrificamos una pista sin repetición para
+  // conseguir equilibrio. Solo resolvemos globalmente los empates.
+  let best=null,bestAssign=null;
+  const attempts=Math.min(120,Math.max(20,courts.length*12));
+
+  for(let pass=0;pass<attempts;pass++){
+    loads.forEach((_,c)=>loads.set(c,0));
+    const trial=new Array(games.length);
+
+    for(const item of order){
+      const cs=item.candidates.slice();
+
+      // Preferimos la pista menos cargada; entre iguales, sorteo.
+      let minLoad=Infinity;
+      for(const c of cs)minLoad=Math.min(minLoad,loads.get(c)||0);
+      const tied=cs.filter(c=>(loads.get(c)||0)===minLoad);
+      const c=tied[Math.floor(Math.random()*tied.length)];
+      trial[item.i]=c;
+      loads.set(c,(loads.get(c)||0)+1);
     }
-    const c=bestCourts[Math.floor(Math.random()*bestCourts.length)];
-    assigned[item.i]=c;
-    loads.set(c,(loads.get(c)||0)+1);
+
+    const bs=balanceScore();
+    if(betterBalance(bs,best)){
+      best=bs;
+      bestAssign=trial.slice();
+    }
   }
 
-  // Mejora por intercambios: si dos partidas pueden cambiar de pista y
-  // reducir las repeticiones totales, hacemos el cambio sin tocar las partidas.
-  let improved=true,passes=0;
-  while(improved&&passes<8){
-    improved=false;passes++;
-    for(let i=0;i<games.length;i++)for(let j=i+1;j<games.length;j++){
-      const a=assigned[i],b=assigned[j];
-      if(a===b)continue;
-      const before=cost(games[i],a)+cost(games[j],b);
-      const after=cost(games[i],b)+cost(games[j],a);
-      if(after<before){
-        assigned[i]=b;assigned[j]=a;
-        improved=true;
+  // Mejora global entre asignaciones que siguen teniendo EXACTAMENTE el
+  // coste mínimo. Primero movimientos individuales y después intercambios.
+  // No se toca ningún jugador ni ninguna partida.
+  const trialLoads=new Map(courts.map(c=>[c,0]));
+  for(const c of bestAssign)trialLoads.set(c,(trialLoads.get(c)||0)+1);
+
+  const trialBalance=()=>{
+    const ls=courts.map(c=>trialLoads.get(c)||0);
+    return [
+      Math.max(...ls)-Math.min(...ls),
+      ls.reduce((s,x)=>s+x*x,0),
+      Math.max(...ls)
+    ];
+  };
+
+  let changed=true,passes=0;
+  while(changed&&passes<20){
+    changed=false;passes++;
+
+    // Movimiento a otra pista con el mismo coste mínimo.
+    for(const item of options){
+      const from=bestAssign[item.i];
+      const before=trialBalance();
+      for(const to of item.candidates){
+        if(to===from)continue;
+        bestAssign[item.i]=to;
+        trialLoads.set(from,(trialLoads.get(from)||0)-1);
+        trialLoads.set(to,(trialLoads.get(to)||0)+1);
+        const after=trialBalance();
+        if(betterBalance(after,before)){
+          changed=true;
+          break;
+        }
+        trialLoads.set(to,(trialLoads.get(to)||0)-1);
+        trialLoads.set(from,(trialLoads.get(from)||0)+1);
+        bestAssign[item.i]=from;
+      }
+    }
+
+    // Intercambio de pistas entre dos partidas, también sin aumentar el
+    // coste total: ambas pistas deben ser opciones mínimas de sus partidas.
+    for(let i=0;i<options.length;i++)for(let j=i+1;j<options.length;j++){
+      const a=options[i],b=options[j];
+      const ca=bestAssign[a.i],cb=bestAssign[b.i];
+      if(ca===cb)continue;
+      if(!a.candidates.includes(cb)||!b.candidates.includes(ca))continue;
+
+      const before=trialBalance();
+      bestAssign[a.i]=cb;
+      bestAssign[b.i]=ca;
+      trialLoads.set(ca,(trialLoads.get(ca)||0)-1);
+      trialLoads.set(cb,(trialLoads.get(cb)||0)-1);
+      trialLoads.set(cb,(trialLoads.get(cb)||0)+1);
+      trialLoads.set(ca,(trialLoads.get(ca)||0)+1);
+      const after=trialBalance();
+
+      if(betterBalance(after,before)){
+        changed=true;
+      }else{
+        bestAssign[a.i]=ca;
+        bestAssign[b.i]=cb;
       }
     }
   }
 
-  return games.map((g,i)=>({...g,court:assigned[i]}));
+  // Comprobación interna: el algoritmo nunca debe empeorar el mínimo global.
+  // Si por cualquier motivo no coincide, volvemos a una asignación directa
+  // de coste mínimo.
+  const finalCost=games.reduce((n,g,i)=>n+cost(g,bestAssign[i]),0);
+  if(finalCost!==totalMin){
+    bestAssign=games.map(item=>{
+      let min=Infinity,cs=[];
+      for(const c of courts){
+        const v=cost(item,c);
+        if(v<min){min=v;cs=[c];}
+        else if(v===min)cs.push(c);
+      }
+      return cs[Math.floor(Math.random()*cs.length)];
+    });
+  }
+
+  return games.map((g,i)=>({...g,court:bestAssign[i]}));
 }
 function randomPure(ids){
   const types=composition(ids.length);if(!types)return null;
