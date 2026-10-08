@@ -435,7 +435,10 @@ function swissMiniCost(order,types,R,pWins,rank){
         if(R.tm.has(q)) partnerRepeat++;
         if(R.rv.has(q)) inversion++;
         if(pWins.get(t[i])!==pWins.get(t[j])) levelPenalty+=Math.abs((pWins.get(t[i])||0)-(pWins.get(t[j])||0));
-        if(rank){rankPenalty+=Math.abs(rank.get(t[i])-rank.get(t[j]));}
+        // Preferencia deportiva: en dupletas, favorecer 1.º+3.º y 2.º+4.º,
+        // en vez de juntar a los dos mejor clasificados o cruzar 1.º con 4.º.
+        // Se aplica solo como desempate, después de evitar repeticiones e inversiones.
+        if(rank){rankPenalty+=Math.abs(Math.abs(rank.get(t[i])-rank.get(t[j]))-2);}
       }
     }
     for(const x of A)for(const y of B){
@@ -446,7 +449,7 @@ function swissMiniCost(order,types,R,pWins,rank){
     }
   }
   // Prioridad: compañero repetido -> rival repetido -> inversión -> mantener nivel.
-  return [partnerRepeat,rivalRepeat,inversion,levelPenalty,-rankPenalty];
+  return [partnerRepeat,rivalRepeat,inversion,levelPenalty,rankPenalty];
 }
 function swissMiniBetter(a,b){
   if(!b)return true;
