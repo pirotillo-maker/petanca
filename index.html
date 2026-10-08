@@ -266,26 +266,9 @@ function miniSwissPool(pool, R, pWins) {
       const order=teams.flat(),s=score(order);
       if(!bestScore||lexBetter(s,bestScore)){bestScore=s;best=teams;}
     }
-    return best?{games:[{teams:best}],score:bestScore}:null;
+    return best?{teams:best,cost:evalGameConflict(best,R)}:null;
   }
-  let best=null,bestOrder=null;
-  const attempts=n<=12?180:n<=20?120:80;
-  const steps=n<=12?500:350;
-  for(let a=0;a<attempts;a++){
-    let order=sh(pool),s=score(order);
-    let temp=80;
-    for(let z=0;z<steps;z++){
-      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
-      if(i===j)continue;
-      [order[i],order[j]]=[order[j],order[i]];
-      const ns=score(order),sv=s[0]*1000000+s[1]*1000+s[2]*100+s[3]*10+s[4],
-        nv=ns[0]*1000000+ns[1]*1000+ns[2]*100+ns[3]*10+ns[4];
-      if(lexBetter(ns,s)||Math.random()<Math.exp((sv-nv)/temp))s=ns;
-      else [order[i],order[j]]=[order[j],order[i]];
-      temp*=.995;
-      if(!best||lexBetter(s,best)){best=s;bestOrder=order.slice();}
-    }
-  }
+  return null;
   if(!bestOrder)return null;
   let k=0,games=[];
   for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}
