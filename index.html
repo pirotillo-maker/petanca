@@ -655,13 +655,22 @@ function compareSwiss(a,b){
   if(bd!==ad)return bd-ad;
   if((b.pf||0)!==(a.pf||0))return (b.pf||0)-(a.pf||0);
   const tied=S.players.filter(p=>(S.sys==='swiss'?swissPoints(p):(p.w||0))===ap&&((p.pf||0)-(p.pc||0))===ad&&(p.pf||0)===(a.pf||0));
-  if(S.sys==='swiss'){
-    if(tied.length===2){
-      const played=S.roundsData.some(r=>r.games.some(g=>(g.teams[0].includes(a.id)&&g.teams[1].includes(b.id))||(g.teams[1].includes(a.id)&&g.teams[0].includes(b.id))));
-      if(played){const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;}
+  if(tied.length>1){
+    const ids=new Set(tied.map(p=>p.id));
+    const ah=directScore(a.id,ids),bh=directScore(b.id,ids);
+    if(S.sys==='swiss'){
+      if(tied.length>=3){
+        if(ah!==bh)return bh-ah;
+      }else{
+        const played=S.roundsData.some(r=>r.games.some(g=>
+          (g.teams[0].includes(a.id)&&g.teams[1].includes(b.id))||
+          (g.teams[1].includes(a.id)&&g.teams[0].includes(b.id))
+        ));
+        if(played&&ah!==bh)return bh-ah;
+      }
+    }else if(ah!==bh){
+      return bh-ah;
     }
-  }else{
-    const ids=new Set(tied.map(p=>p.id));const ah=directScore(a.id,ids),bh=directScore(b.id,ids);if(bh!==ah)return bh-ah;
   }
   const as=strengthScore(a.id),bs=strengthScore(b.id);
   if(bs[0]!==as[0])return bs[0]-as[0];
