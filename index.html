@@ -333,6 +333,16 @@ function buildSwissMiniGroups(allRanked,pWins){
     }
     blocks.push({wins:w,ids});
   }
+  // Si una categoría inferior queda con un resto que ya no puede formar
+  // un bloque por sí sola, no inventamos otro nivel: lo tratamos como
+  // caso extremo y lo incorporamos al último subgrupo. La composición
+  // global sigue siendo válida y el optimizador decidirá la mejor salida.
+  const leftovers=[];
+  for(const arr of byWins.values())if(arr.length)leftovers.push(...arr.splice(0,arr.length));
+  if(leftovers.length){
+    if(!blocks.length)blocks.push({wins:wins[wins.length-1]??0,ids:leftovers});
+    else blocks[blocks.length-1].ids.push(...leftovers);
+  }
   return blocks;
 }
 function swiss(ids){
