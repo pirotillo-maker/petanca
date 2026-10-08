@@ -95,6 +95,7 @@ jobs:
 
           w.eval(script + '\\n' + harness);
           NODE
+          cd /tmp
           npm init -y >/dev/null 2>&1
           npm install jsdom@24 >/dev/null 2>&1
           node /tmp/test.mjs
