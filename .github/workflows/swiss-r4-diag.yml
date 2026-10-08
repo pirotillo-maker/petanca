@@ -1,5 +1,8 @@
 name: Swiss R4 Diagnostic
 on:
+  push:
+    paths:
+      - '.github/workflows/swiss-r4-diag.yml'
   workflow_dispatch:
 jobs:
   diag:
