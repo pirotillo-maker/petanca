@@ -476,9 +476,9 @@ function optimizeSwissMini(ids,R,pWins){
       else [order[i],order[j]]=[order[j],order[i]];
       temp*=.995;
       if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}
-      if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0)break;
+      if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
     }
-    if(best&&best[0]===0&&best[1]===0&&best[2]===0)break;
+    if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[4]===0)break;
   }
   if(!bestOrder)return null;
   let k=0,games=[];
