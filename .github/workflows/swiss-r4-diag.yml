@@ -1,0 +1,41 @@
+name: Swiss R4 Diagnostic
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        players: [40,50]
+    steps:
+      - run: |
+          cd /tmp
+          npm init -y >/dev/null 2>&1
+          npm install jsdom@24 >/dev/null 2>&1
+          cat > test.mjs <<'NODE'
+          import {JSDOM} from 'jsdom';
+          const n=Number(process.env.PLAYERS);
+          const html=await (await fetch('https://raw.githubusercontent.com/pirotillo-maker/petanca/main/index.html')).text();
+          const a=html.indexOf('<script>')+8,b=html.lastIndexOf('</script>');
+          const dom=new JSDOM(html,{url:'https://example.com/',runScripts:'outside-only'});
+          const w=dom.window; w.alert=()=>{}; w.confirm=()=>true;
+          const script=html.slice(a,b);
+          const H=`
+          (()=>{const ids=Array.from({length:${n}},(_,i)=>'P'+i);
+          const mk=()=>ids.map(id=>({id,name:id,w:0,d:0,l:0,pf:0,pc:0}));
+          const result=gs=>gs.forEach(g=>g.result=Math.random()<.5?{a:13,b:8}:{a:8,b:13});
+          const rec=()=>{S.players.forEach(p=>Object.assign(p,{w:0,d:0,l:0,pf:0,pc:0}));for(const rr of S.roundsData)for(const g of rr.games){let a=g.result.a,b=g.result.b;for(const id of g.teams[0]){let p=S.players.find(x=>x.id===id);p.pf+=a;p.pc+=b}for(const id of g.teams[1]){let p=S.players.find(x=>x.id===id);p.pf+=b;p.pc+=a}if(a>b){g.teams[0].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[1].forEach(id=>S.players.find(x=>x.id===id).l++)}else{g.teams[1].forEach(id=>S.players.find(x=>x.id===id).w++);g.teams[0].forEach(id=>S.players.find(x=>x.id===id).l++)}}};
+          const diag=()=>{const priorP=new Set(),priorR=new Set();for(let r=0;r<3;r++)for(const g of S.roundsData[r].games){for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++)priorP.add(key(t[i],t[j]));for(const x of g.teams[0])for(const y of g.teams[1])priorR.add(key(x,y))}
+          const cats={};S.players.forEach(p=>{const k=p.w;cats[k]=(cats[k]||0)+1});let stats={cats,byCross:{},conflicts:0};
+          const score=id=>S.players.find(p=>p.id===id).w;
+          for(const g of S.roundsData[3].games){const ca=g.teams[0].map(score),cb=g.teams[1].map(score);const cross=[...new Set([...ca,...cb])].sort((a,b)=>b-a).join('-');let inv=0,rr=0,pp=0;
+            for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let q=key(t[i],t[j]);if(priorP.has(q))pp++;if(priorR.has(q))inv++}
+            for(const x of g.teams[0])for(const y of g.teams[1]){let q=key(x,y);if(priorR.has(q))rr++;if(priorP.has(q))inv++}
+            if(!stats.byCross[cross])stats.byCross[cross]={games:0,pp:0,rr:0,inv:0};let z=stats.byCross[cross];z.games++;z.pp+=pp;z.rr+=rr;z.inv+=inv;stats.conflicts+=pp+rr+inv}
+          return stats};
+          let agg={};for(let c=0;c<100;c++){S={name:'x',sys:'swiss',rounds:4,courts:20,tri:true,one:true,players:mk(),roundsData:[],started:false};let r=firstSwiss(ids);S.roundsData.push({number:1,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:2,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:3,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:4,games:r.games});let d=diag();for(let k in d.byCross){if(!agg[k])agg[k]={games:0,pp:0,rr:0,inv:0};for(let x of ['games','pp','rr','inv'])agg[k][x]+=d.byCross[k][x]} }
+          console.log(JSON.stringify({p:${n},cross:agg}));})();
+          `;
+          w.eval(script+'\n'+H);
+          NODE
+          PLAYERS=${{matrix.players}} node /tmp/test.mjs
