@@ -520,14 +520,29 @@ function buildSwissMiniGroups(allRanked,pWins){
     if(!blocks.length)blocks.push({wins:wins[wins.length-1]??0,ids:leftovers});
     else blocks[blocks.length-1].ids.push(...leftovers);
   }
-  // Repara restos pequeños: si el último subgrupo no tiene composición
-  // válida, se fusiona con el subgrupo inmediatamente superior. Así se
-  // conserva el principio de categorías adyacentes y no se bloquea R3/R4.
-  for(let i=blocks.length-1;i>=0;i--){
-    if(composition(blocks[i].ids.length))continue;
-    if(i>0){
-      blocks[i-1].ids.push(...blocks[i].ids);
-      blocks.splice(i,1);
+  // Repara cualquier bloque cuya composición no sea válida. Normalmente
+  // basta con fusionar un resto inferior con el bloque inmediatamente
+  // superior. Pero en casos extremos también puede quedar inválido el
+  // primer bloque (por ejemplo, 1 jugador con 3 victorias); en ese caso
+  // se fusiona con el bloque inmediatamente inferior. Nunca se salta una
+  // categoría para hacer esta reparación.
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(let i=blocks.length-1;i>=0;i--){
+      if(composition(blocks[i].ids.length))continue;
+      if(i>0){
+        blocks[i-1].ids.push(...blocks[i].ids);
+        blocks.splice(i,1);
+        changed=true;
+        break;
+      }
+      if(i+1<blocks.length){
+        blocks[i].ids.push(...blocks[i+1].ids);
+        blocks.splice(i+1,1);
+        changed=true;
+        break;
+      }
     }
   }
   return blocks;
