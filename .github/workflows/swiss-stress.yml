@@ -93,7 +93,7 @@ jobs:
           })();
           `;
 
-          w.eval(script + '\\n' + harness);
+          w.eval(script + '\n' + harness);
           NODE
           cd /tmp
           npm init -y >/dev/null 2>&1
