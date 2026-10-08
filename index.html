@@ -248,113 +248,115 @@ function miniSwissTopBlock(pools, types, R, pWins, topWins) {
   }
   return {games,score:best,blockGames,blockIds:new Set(block)};
 }
-function miniSwissPool(pool, R, pWins) {
-  const n=pool.length, types=composition(n);
-  if(!types)return null;
-  function score(order){
-    return roundCost(order,types,R,'swiss',pWins);
-  }
-  if(n<=6){
-    let best=null,bestScore=null;
-    let candidates=[];
-    if(n===2)candidates=[[[pool[0]],[pool[1]]]];
-    else if(n===4){
-      const p0=pool[0],p1=pool[1],p2=pool[2],p3=pool[3];
-      candidates=[[[p0,p2],[p1,p3]],[[p0,p3],[p1,p2]],[[p0,p1],[p2,p3]]];
-    }else candidates=(n===5?getSplits5(pool):getSplits6(pool));
-    for(const teams of candidates){
-      const order=teams.flat(),s=score(order);
-      if(!bestScore||lexBetter(s,bestScore)){bestScore=s;best=teams;}
+function swissMiniCost(order,types,R,pWins,rank){
+  let partnerRepeat=0,inversion=0,rivalRepeat=0,levelPenalty=0,rankPenalty=0,k=0;
+  for(const z of types){
+    const [as,bs]=gameShape(z),A=order.slice(k,k+as),B=order.slice(k+as,k+z);k+=z;
+    for(const t of [A,B]){
+      for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){
+        const q=key(t[i],t[j]);
+        if(R.tm.has(q)) partnerRepeat++;
+        if(R.rv.has(q)) inversion++;
+        if(pWins.get(t[i])!==pWins.get(t[j])) levelPenalty+=Math.abs((pWins.get(t[i])||0)-(pWins.get(t[j])||0));
+        if(rank){rankPenalty+=Math.abs(rank.get(t[i])-rank.get(t[j]));}
+      }
     }
-    return best?{teams:best,cost:evalGameConflict(best,R)}:null;
+    for(const x of A)for(const y of B){
+      const q=key(x,y);
+      if(R.rv.has(q)) rivalRepeat++;
+      if(R.tm.has(q)) inversion++;
+      if(pWins.get(x)!==pWins.get(y)) levelPenalty+=0.25*Math.abs((pWins.get(x)||0)-(pWins.get(y)||0));
+    }
   }
-  return null;
+  // Prioridad: compañero repetido -> inversión -> rival repetido -> mantener nivel.
+  return [partnerRepeat,inversion,rivalRepeat,levelPenalty,-rankPenalty];
+}
+function swissMiniBetter(a,b){
+  if(!b)return true;
+  for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]<b[i];
+  return false;
+}
+function optimizeSwissMini(ids,R,pWins){
+  const types=composition(ids.length);if(!types)return null;
+  const rank=new Map(ids.map((id,i)=>[id,i]));
+  const score=o=>swissMiniCost(o,types,R,pWins,rank);
+  let best=null,bestOrder=null;
+  const n=ids.length;
+  const attempts=n<=8?260:n<=14?180:n<=24?110:70;
+  const steps=n<=8?500:n<=14?350:n<=24?240:180;
+  for(let a=0;a<attempts;a++){
+    let order=sh(ids),s=score(order),temp=2;
+    for(let step=0;step<steps;step++){
+      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
+      [order[i],order[j]]=[order[j],order[i]];
+      const ns=score(order);
+      const cur=s[0]*1e8+s[1]*1e6+s[2]*1e4+s[3]*100+s[4];
+      const nv=ns[0]*1e8+ns[1]*1e6+ns[2]*1e4+ns[3]*100+ns[4];
+      if(nv<=cur||Math.random()<Math.exp((cur-nv)/Math.max(.5,temp)))s=ns;
+      else [order[i],order[j]]=[order[j],order[i]];
+      temp*=.995;
+      if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}
+      if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0)break;
+    }
+    if(best&&best[0]===0&&best[1]===0&&best[2]===0)break;
+  }
   if(!bestOrder)return null;
   let k=0,games=[];
   for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}
   return {games,score:best};
 }
-
-function swiss(ids) {
-  if (!S.roundsData.length) return firstSwiss(ids);
-
-  const N = ids.length;
-  const types = composition(N);
-  if (!types) return null;
-
-  const allRanked = [...S.players]
-    .filter(p => ids.includes(p.id))
-    .sort(compareSwiss);
-
-  const pWins = new Map(S.players.map(p => [p.id, p.w || 0]));
-  const R = relations();
-
-  const buckets = new Map();
-  for (const p of allRanked) {
-    const w = p.w || 0;
-    if (!buckets.has(w)) buckets.set(w, []);
-    buckets.get(w).push(p.id);
+function findMinimalPromotion(count,lowerCount){
+  for(let k=0;k<=lowerCount;k++)if(composition(count+k))return k;
+  return null;
+}
+function buildSwissMiniGroups(allRanked,pWins){
+  const byWins=new Map();
+  for(const p of allRanked){const w=pWins.get(p.id)||0;if(!byWins.has(w))byWins.set(w,[]);byWins.get(w).push(p.id);}
+  const wins=[...byWins.keys()].sort((a,b)=>b-a);
+  const blocks=[];
+  for(let wi=0;wi<wins.length;wi++){
+    const w=wins[wi], own=byWins.get(w);
+    const lower=wi+1<wins.length?byWins.get(wins[wi+1]):[];
+    if(!own.length)continue;
+    const k=findMinimalPromotion(own.length,lower.length);
+    if(k!==null){
+      const promoted=lower.splice(0,k);
+      blocks.push({wins:w,ids:own.splice(0,own.length).concat(promoted)});
+      continue;
+    }
+    // Caso extremo: no existe composición válida usando solo la categoría inmediata.
+    // Se entrega el bloque disponible a la fase de mejor-esfuerzo; nunca se bloquea la ronda.
+    const ids=own.splice(0,own.length);
+    if(lower.length){
+      const need=Math.min(lower.length,Math.max(0,8-ids.length));
+      ids.push(...lower.splice(0,need));
+    }
+    blocks.push({wins:w,ids});
   }
-
-  const sortedWins = [...buckets.keys()].sort((a,b)=>b-a);
-  const masterList = [];
-  for (const w of sortedWins) masterList.push(...buckets.get(w));
-
-  let pools = [];
-  let idx = 0;
-  for (const z of types) {
-    pools.push(masterList.slice(idx,idx+z));
-    idx += z;
-  }
-
-  // R4/R3: resolver global para el grupo de mayor puntuación.
-  // No cambia cuántos jugadores se toman del siguiente nivel: solo optimiza cómo juegan.
-  const topWins = sortedWins[0];
-  const top = miniSwissTopBlock(pools,types,R,pWins,topWins);
-
-  let currentGames = pools.map((p,i) => {
-    if(top && i < top.blockGames) return {teams:top.games[i].teams,cost:evalGameConflict(top.games[i].teams,R)};
-    const opt=miniSwissPool(p,R,pWins);
-    return opt || bestGamePartition(p,R,pWins);
-  });
-
-  if (top) {
-    for(let i=0;i<top.blockGames;i++) currentGames[i]={teams:top.games[i].teams,cost:evalGameConflict(top.games[i].teams,R)};
-  }
-
-  let totalCost=currentGames.reduce((sum,g)=>sum+g.cost,0);
-
-  if(totalCost===0) return {games:currentGames.map(r=>({teams:r.teams}))};
-
-  const numGames=pools.length;
-  const frozenTopGames=top?top.blockGames:0;
-  let pass=0, improved=true;
-  while(improved && pass<15 && totalCost>0){
-    improved=false; pass++;
-    for(let g1=frozenTopGames;g1<numGames;g1++){
-      for(let g2=g1+1;g2<numGames;g2++){
-        for(let i1=0;i1<pools[g1].length;i1++){
-          for(let i2=0;i2<pools[g2].length;i2++){
-            const u=pools[g1][i1],v=pools[g2][i2];
-            if(pWins.get(u)!==pWins.get(v)) continue;
-            pools[g1][i1]=v; pools[g2][i2]=u;
-            const res1=bestGamePartition(pools[g1],R,pWins);
-            const res2=bestGamePartition(pools[g2],R,pWins);
-            const oldCost=currentGames[g1].cost+currentGames[g2].cost;
-            const newCost=res1.cost+res2.cost;
-            if(newCost<oldCost){
-              totalCost=totalCost-oldCost+newCost;
-              currentGames[g1]=res1; currentGames[g2]=res2; improved=true;
-            } else {
-              pools[g1][i1]=u; pools[g2][i2]=v;
-            }
-          }
-        }
+  return blocks;
+}
+function swiss(ids){
+  if(!S.roundsData.length)return firstSwiss(ids);
+  const allRanked=[...S.players].filter(p=>ids.includes(p.id)).sort(compareSwiss);
+  const pWins=new Map(S.players.map(p=>[p.id,p.w||0]));
+  const R=relations();
+  const blocks=buildSwissMiniGroups(allRanked,pWins);
+  const games=[];
+  for(const block of blocks){
+    let result=optimizeSwissMini(block.ids,R,pWins);
+    if(!result){
+      const types=composition(block.ids.length);
+      if(types){
+        // Último recurso: reparto directo del bloque, manteniendo su composición.
+        const order=sh(block.ids),gs=[];let k=0;
+        for(const z of types){const [as,bs]=gameShape(z);gs.push({teams:[order.slice(k,k+as),order.slice(k+as,k+z)]});k+=z;}
+        result={games:gs};
       }
     }
+    if(!result)return null;
+    games.push(...result.games);
   }
-
-  return {games:currentGames.map(r=>({teams:r.teams}))};
+  return {games};
 }
 function fallbackRound(ids){
   const types=composition(ids.length);if(!types)return null;
