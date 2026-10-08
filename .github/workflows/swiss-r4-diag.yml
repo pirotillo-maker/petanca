@@ -35,7 +35,7 @@ jobs:
             for(const t of g.teams)for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){let q=key(t[i],t[j]);if(priorP.has(q))pp++;if(priorR.has(q))inv++}
             for(const x of g.teams[0])for(const y of g.teams[1]){let q=key(x,y);if(priorR.has(q))rr++;if(priorP.has(q))inv++}
             if(!stats.byCross[cross])stats.byCross[cross]={games:0,pp:0,rr:0,inv:0};let z=stats.byCross[cross];z.games++;z.pp+=pp;z.rr+=rr;z.inv+=inv;stats.conflicts+=pp+rr+inv}
-          return stats};
+          for(const k of Object.keys(cats)) stats['SIZE'+k]=cats[k]; return stats};
           let agg={};for(let c=0;c<100;c++){S={name:'x',sys:'swiss',rounds:4,courts:20,tri:true,one:true,players:mk(),roundsData:[],started:false};let r=firstSwiss(ids);S.roundsData.push({number:1,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:2,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:3,games:r.games});result(r.games);rec();r=swiss(ids);S.roundsData.push({number:4,games:r.games});let d=diag();for(let k in d.byCross){if(!agg[k])agg[k]={games:0,pp:0,rr:0,inv:0};for(let x of ['games','pp','rr','inv'])agg[k][x]+=d.byCross[k][x]} }
           console.log(JSON.stringify({p:${n},cross:agg}));})();
           `;
