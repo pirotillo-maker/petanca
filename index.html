@@ -490,62 +490,62 @@ function findMinimalPromotion(count,lowerCount){
   return null;
 }
 function buildSwissMiniGroups(allRanked,pWins){
+  // Particiona el ranking en bloques válidos, manteniendo cada bloque dentro
+  // de una categoría o de dos categorías de victorias consecutivas existentes.
+  // Así se evita que un resto de una categoría inferior provoque fusiones de
+  // varias categorías no adyacentes.
+  if(!allRanked.length)return [];
+  const wins=[...new Set(allRanked.map(p=>pWins.get(p.id)||0))].sort((a,b)=>b-a);
+  const tier=new Map(wins.map((w,i)=>[w,i]));
+  const n=allRanked.length;
+  const dp=Array(n+1).fill(null);
+  dp[n]={promotions:0,mixed:0,splits:0,blocks:[]};
+  for(let i=n-1;i>=0;i--){
+    for(let j=i+2;j<=n;j++){
+      const len=j-i;
+      if(!composition(len)||!dp[j])continue;
+      const firstTier=tier.get(pWins.get(allRanked[i].id)||0);
+      const lastTier=tier.get(pWins.get(allRanked[j-1].id)||0);
+      if(lastTier-firstTier>1)break;
+      let lowerCount=0;
+      if(lastTier>firstTier){
+        for(let k=i;k<j;k++){
+          if(tier.get(pWins.get(allRanked[k].id)||0)===lastTier)lowerCount++;
+        }
+      }
+      const split=(j<n && tier.get(pWins.get(allRanked[j-1].id)||0)===tier.get(pWins.get(allRanked[j].id)||0))?1:0;
+      const candidate={
+        promotions:dp[j].promotions+lowerCount,
+        mixed:dp[j].mixed+(lastTier>firstTier?1:0),
+        splits:dp[j].splits+split,
+        blocks:[{wins:wins[firstTier],ids:allRanked.slice(i,j).map(p=>p.id)}].concat(dp[j].blocks)
+      };
+      const better=!dp[i] ||
+        candidate.promotions<dp[i].promotions ||
+        (candidate.promotions===dp[i].promotions && candidate.mixed<dp[i].mixed) ||
+        (candidate.promotions===dp[i].promotions && candidate.mixed===dp[i].mixed && candidate.splits<dp[i].splits);
+      if(better)dp[i]=candidate;
+    }
+  }
+  // Si no existe una partición estrictamente adyacente, conserva la salida
+  // segura de mejor esfuerzo anterior para que nunca se bloquee el campeonato.
+  if(dp[0])return dp[0].blocks;
   const byWins=new Map();
   for(const p of allRanked){const w=pWins.get(p.id)||0;if(!byWins.has(w))byWins.set(w,[]);byWins.get(w).push(p.id);}
-  const wins=[...byWins.keys()].sort((a,b)=>b-a);
   const blocks=[];
-  for(let wi=0;wi<wins.length;wi++){
-    const w=wins[wi], own=byWins.get(w);
-    const lower=wi+1<wins.length?byWins.get(wins[wi+1]):[];
-    if(!own.length)continue;
-    const k=findMinimalPromotion(own.length,lower.length);
-    if(k!==null){
-      const promoted=lower.splice(0,k);
-      blocks.push({wins:w,ids:own.splice(0,own.length).concat(promoted)});
-      continue;
-    }
-    // Caso extremo: no existe composición válida usando solo la categoría inmediata.
-    // Se entrega el bloque disponible a la fase de mejor-esfuerzo; nunca se bloquea la ronda.
-    const ids=own.splice(0,own.length);
-    if(lower.length){
-      const need=Math.min(lower.length,Math.max(0,8-ids.length));
-      ids.push(...lower.splice(0,need));
-    }
-    blocks.push({wins:w,ids});
+  for(const [w,ids] of byWins){
+    if(!ids.length)continue;
+    const k=findMinimalPromotion(ids.length,allRanked.length);
+    if(k!==null&&composition(ids.length))blocks.push({wins:w,ids:ids.splice(0,ids.length)});
+    else blocks.push({wins:w,ids:ids.splice(0,ids.length)});
   }
-  // Si una categoría inferior queda con un resto que ya no puede formar
-  // un bloque por sí sola, no inventamos otro nivel: lo tratamos como
-  // caso extremo y lo incorporamos al último subgrupo. La composición
-  // global sigue siendo válida y el optimizador decidirá la mejor salida.
-  const leftovers=[];
-  for(const arr of byWins.values())if(arr.length)leftovers.push(...arr.splice(0,arr.length));
-  if(leftovers.length){
-    if(!blocks.length)blocks.push({wins:wins[wins.length-1]??0,ids:leftovers});
-    else blocks[blocks.length-1].ids.push(...leftovers);
-  }
-  // Repara cualquier bloque cuya composición no sea válida. Normalmente
-  // basta con fusionar un resto inferior con el bloque inmediatamente
-  // superior. Pero en casos extremos también puede quedar inválido el
-  // primer bloque (por ejemplo, 1 jugador con 3 victorias); en ese caso
-  // se fusiona con el bloque inmediatamente inferior. Nunca se salta una
-  // categoría para hacer esta reparación.
   let changed=true;
   while(changed){
     changed=false;
     for(let i=blocks.length-1;i>=0;i--){
       if(composition(blocks[i].ids.length))continue;
-      if(i>0){
-        blocks[i-1].ids.push(...blocks[i].ids);
-        blocks.splice(i,1);
-        changed=true;
-        break;
-      }
-      if(i+1<blocks.length){
-        blocks[i].ids.push(...blocks[i+1].ids);
-        blocks.splice(i+1,1);
-        changed=true;
-        break;
-      }
+      if(i>0){blocks[i-1].ids.push(...blocks[i].ids);blocks.splice(i,1);changed=true;break;}
+      if(i+1<blocks.length){blocks[i].ids.push(...blocks[i+1].ids);blocks.splice(i+1,1);changed=true;break;}
     }
   }
   return blocks;
