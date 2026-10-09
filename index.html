@@ -519,8 +519,9 @@ function optimizeSwissMini(ids,R,pWins){
   // El resto conserva la búsqueda rápida para no penalizar la generación.
   const attempts=targetTier?(n<=20?120:60):(n<=20?20:10);
   const steps=targetTier?(n<=20?360:260):(n<=20?100:70);
-  const rankWeight=n*n*2+1,levelWeight=rankWeight,invWeight=(10*n+1)*levelWeight,rivalWeight=(10*n+1)*invWeight,partnerWeight=(10*n+1)*rivalWeight;
-  const value=s=>s[0]*partnerWeight+s[1]*rivalWeight+s[2]*invWeight+s[3]*levelWeight+s[4];
+  // Temperatura por componente: permite salir de mínimos locales sin romper
+  // el orden lexicográfico real de prioridades al elegir el mejor resultado.
+  const heat=targetTier?[0.8,1.0,1.5,2.0,8.0]:[0.4,0.5,0.7,1.0,3.0];
   function improve(order,current){
     const passes=targetTier?8:1;
     for(let pass=0;pass<passes;pass++){
@@ -549,15 +550,17 @@ function optimizeSwissMini(ids,R,pWins){
     return current;
   }
   for(let a=0;a<attempts;a++){
-    let order=sh(ids),s=score(order),temp=partnerWeight*0.0000005;
+    let order=sh(ids),s=score(order);
     for(let step=0;step<steps;step++){
       const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);
       if(i===j)continue;
       [order[i],order[j]]=[order[j],order[i]];
-      const ns=score(order),cur=value(s),nv=value(ns);
-      if(nv<=cur||Math.random()<Math.exp((cur-nv)/Math.max(.5,temp)))s=ns;
+      const ns=score(order);
+      if(swissMiniBetter(ns,s)){s=ns;continue;}
+      let at=0;while(at<ns.length&&ns[at]===s[at])at++;
+      const cooling=Math.max(0.08,1-step/steps);
+      if(at<ns.length&&Math.random()<Math.exp(-(ns[at]-s[at])/Math.max(0.05,heat[at]*cooling)))s=ns;
       else [order[i],order[j]]=[order[j],order[i]];
-      temp*=.995;
     }
     s=improve(order,s);
     if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}
