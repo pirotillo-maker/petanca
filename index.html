@@ -490,62 +490,76 @@ function findMinimalPromotion(count,lowerCount){
   return null;
 }
 function buildSwissMiniGroups(allRanked,pWins){
-  // Particiona el ranking en bloques válidos, manteniendo cada bloque dentro
-  // de una categoría o de dos categorías de victorias consecutivas existentes.
-  // Así se evita que un resto de una categoría inferior provoque fusiones de
-  // varias categorías no adyacentes.
   if(!allRanked.length)return [];
-  const wins=[...new Set(allRanked.map(p=>pWins.get(p.id)||0))].sort((a,b)=>b-a);
-  const tier=new Map(wins.map((w,i)=>[w,i]));
-  const n=allRanked.length;
-  const dp=Array(n+1).fill(null);
-  dp[n]={promotions:0,mixed:0,splits:0,blocks:[]};
-  for(let i=n-1;i>=0;i--){
-    for(let j=i+2;j<=n;j++){
-      const len=j-i;
-      if(!composition(len)||!dp[j])continue;
-      const firstTier=tier.get(pWins.get(allRanked[i].id)||0);
-      const lastTier=tier.get(pWins.get(allRanked[j-1].id)||0);
-      if(lastTier-firstTier>1)break;
-      let lowerCount=0;
-      if(lastTier>firstTier){
-        for(let k=i;k<j;k++){
-          if(tier.get(pWins.get(allRanked[k].id)||0)===lastTier)lowerCount++;
-        }
-      }
-      const split=(j<n && tier.get(pWins.get(allRanked[j-1].id)||0)===tier.get(pWins.get(allRanked[j].id)||0))?1:0;
-      const candidate={
-        promotions:dp[j].promotions+lowerCount,
-        mixed:dp[j].mixed+(lastTier>firstTier?1:0),
-        splits:dp[j].splits+split,
-        blocks:[{wins:wins[firstTier],ids:allRanked.slice(i,j).map(p=>p.id)}].concat(dp[j].blocks)
-      };
-      const better=!dp[i] ||
-        candidate.promotions<dp[i].promotions ||
-        (candidate.promotions===dp[i].promotions && candidate.mixed<dp[i].mixed) ||
-        (candidate.promotions===dp[i].promotions && candidate.mixed===dp[i].mixed && candidate.splits<dp[i].splits);
-      if(better)dp[i]=candidate;
+  const byWins=new Map();
+  for(const p of allRanked){
+    const w=pWins.get(p.id)||0;
+    if(!byWins.has(w))byWins.set(w,[]);
+    byWins.get(w).push(p.id);
+  }
+  const wins=[...byWins.keys()].sort((a,b)=>b-a);
+  const buckets=wins.map(w=>({wins:w,ids:byWins.get(w).slice()}));
+  const blocks=[];
+  for(let i=0;i<buckets.length;i++){
+    const bucket=buckets[i];
+    if(!bucket.ids.length)continue;
+    const ids=bucket.ids.splice(0);
+    // Promociona solo desde la categoría inmediatamente inferior y solo
+    // hasta que el tamaño permita una composición válida.
+    const lower=buckets[i+1];
+    while(!composition(ids.length)&&lower&&lower.ids.length){
+      ids.push(lower.ids.shift());
+    }
+    if(composition(ids.length)){
+      blocks.push({wins:bucket.wins,ids});
+    }else{
+      // Caso extremo: conservar el grupo para resolverlo junto al siguiente
+      // bloque, sin saltarse categorías.
+      blocks.push({wins:bucket.wins,ids});
     }
   }
-  // Si no existe una partición estrictamente adyacente, conserva la salida
-  // segura de mejor esfuerzo anterior para que nunca se bloquee el campeonato.
-  if(dp[0])return dp[0].blocks;
-  const byWins=new Map();
-  for(const p of allRanked){const w=pWins.get(p.id)||0;if(!byWins.has(w))byWins.set(w,[]);byWins.get(w).push(p.id);}
-  const blocks=[];
-  for(const [w,ids] of byWins){
-    if(!ids.length)continue;
-    const k=findMinimalPromotion(ids.length,allRanked.length);
-    if(k!==null&&composition(ids.length))blocks.push({wins:w,ids:ids.splice(0,ids.length)});
-    else blocks.push({wins:w,ids:ids.splice(0,ids.length)});
+  // Si la categoría inferior deja exactamente un jugador, se sube al bloque
+  // inmediatamente superior y se recalcula la composición de todo el grupo.
+  const last=buckets[buckets.length-1];
+  if(last&&last.ids.length===1&&blocks.length>1){
+    const lone=last.ids.pop();
+    const upper=blocks[blocks.length-1];
+    upper.ids.push(lone);
+    upper.composition=composition(upper.ids.length);
+    // Si la suma no admite composición, se deja constancia para la reparación
+    // local siguiente; nunca se mezcla una categoría no adyacente.
   }
+  // Los restos se integran únicamente con el bloque contiguo. Preferimos
+  // mantener la continuidad de categorías antes que fabricar un bloque inválido.
+  for(const bucket of buckets){
+    if(!bucket.ids.length)continue;
+    if(blocks.length){
+      const upper=blocks[blocks.length-1];
+      upper.ids.push(...bucket.ids.splice(0));
+      upper.composition=composition(upper.ids.length);
+    }else{
+      blocks.push({wins:bucket.wins,ids:bucket.ids.splice(0)});
+    }
+  }
+  // Si un bloque quedó inválido, fusionarlo con el vecino inmediato y volver
+  // a evaluar la composición del conjunto completo.
   let changed=true;
   while(changed){
     changed=false;
     for(let i=blocks.length-1;i>=0;i--){
       if(composition(blocks[i].ids.length))continue;
-      if(i>0){blocks[i-1].ids.push(...blocks[i].ids);blocks.splice(i,1);changed=true;break;}
-      if(i+1<blocks.length){blocks[i].ids.push(...blocks[i+1].ids);blocks.splice(i+1,1);changed=true;break;}
+      if(i>0){
+        blocks[i-1].ids.push(...blocks[i].ids);
+        blocks.splice(i,1);
+        changed=true;
+        break;
+      }
+      if(i+1<blocks.length){
+        blocks[i].ids.push(...blocks[i+1].ids);
+        blocks.splice(i+1,1);
+        changed=true;
+        break;
+      }
     }
   }
   return blocks;
