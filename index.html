@@ -517,11 +517,11 @@ function optimizeSwissMini(ids,R,pWins){
   let best=null,bestOrder=null;
   // Afinado extra solo para los bloques puros de 1 y 2 victorias grandes.
   // El resto conserva la búsqueda rápida para no penalizar la generación.
-  const attempts=targetTier?(n<=20?36:18):(n<=20?20:10);
-  const steps=targetTier?(n<=20?150:100):(n<=20?100:70);
+  const attempts=targetTier?(n<=20?60:40):(n<=20?20:10);
+  const steps=targetTier?(n<=20?240:180):(n<=20?100:70);
   const value=s=>s[0]*1e10+s[1]*1e8+s[2]*1e6+s[3]*100+s[4];
   function improve(order,current){
-    const passes=targetTier?3:1;
+    const passes=targetTier?4:1;
     for(let pass=0;pass<passes;pass++){
       let local=current,li=-1,lj=-1;
       if(targetTier&&n<=24){
