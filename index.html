@@ -458,32 +458,53 @@ function swissMiniBetter(a,b){
 }
 function optimizeSwissMini(ids,R,pWins){
   const types=composition(ids.length);if(!types)return null;
-  const rank=new Map(ids.map((id,i)=>[id,i]));
-  const score=o=>swissMiniCost(o,types,R,pWins,rank);
-  let best=null,bestOrder=null;
-  const n=ids.length;
-  const attempts=n<=8?260:n<=14?180:n<=24?110:70;
-  const steps=n<=8?500:n<=14?350:n<=24?240:180;
-  for(let a=0;a<attempts;a++){
-    let order=sh(ids),s=score(order),temp=2;
-    for(let step=0;step<steps;step++){
-      const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;
-      [order[i],order[j]]=[order[j],order[i]];
-      const ns=score(order);
-      const cur=s[0]*1e10+s[1]*1e8+s[2]*1e6+s[3]*100+s[4];
-      const nv=ns[0]*1e10+ns[1]*1e8+ns[2]*1e6+ns[3]*100+ns[4];
-      if(nv<=cur||Math.random()<Math.exp((cur-nv)/Math.max(.5,temp)))s=ns;
-      else [order[i],order[j]]=[order[j],order[i]];
-      temp*=.995;
-      if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}
-      if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[3]===0&&best[4]===0)break;
-    }
-    if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[4]===0)break;
+  const rank=new Map(ids.map((id,i)=>[id,i])),n=ids.length;
+  const addCost=(a,b)=>a.map((v,i)=>v+b[i]),zero=[0,0,0,0,0];
+  function gameCost(teams){
+    let pr=0,rr=0,inv=0,level=0,rp=0;const [A,B]=teams;
+    for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){const q=key(t[i],t[j]);if(R.tm.has(q))pr++;if(R.rv.has(q))inv++;level+=Math.abs((pWins.get(t[i])||0)-(pWins.get(t[j])||0));rp+=Math.abs(Math.abs(rank.get(t[i])-rank.get(t[j]))-2);}
+    for(const a of A)for(const b of B){const q=key(a,b);if(R.rv.has(q))rr++;if(R.tm.has(q))inv++;level+=.25*Math.abs((pWins.get(a)||0)-(pWins.get(b)||0));}
+    return [pr,rr,inv,level,rp];
   }
-  if(!bestOrder)return null;
-  let k=0,games=[];
-  for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}
-  return {games,score:best};
+  function options(pool,z){if(z===2)return [[[pool[0]],[pool[1]]]];if(z===4){const [a,b,c,d]=pool;return [[[a,c],[b,d]],[[a,d],[b,c]],[[a,b],[c,d]]];}return z===5?getSplits5(pool):getSplits6(pool);}
+  if(n<=12){
+    const memo=new Map(),full=(1<<n)-1;
+    function solve(mask,gi){
+      if(mask===full)return {cost:zero,games:[]};
+      if(gi>=types.length)return null;
+      const mk=mask+"|"+gi;if(memo.has(mk))return memo.get(mk);
+      const z=types[gi],remaining=[];for(let i=0;i<n;i++)if(!(mask&(1<<i)))remaining.push(i);
+      if(remaining.length<z)return null;
+      const first=remaining[0];let best=null;
+      function choose(pos,left,chosen){
+        if(left===0){
+          if(!chosen.includes(first))return;
+          const pool=chosen.map(i=>ids[i]);let nextMask=mask;for(const i of chosen)nextMask|=(1<<i);
+          for(const teams of options(pool,z)){const tail=solve(nextMask,gi+1);if(!tail)continue;const cost=addCost(gameCost(teams),tail.cost);if(swissMiniBetter(cost,best?.cost))best={cost,games:[{teams},...tail.games]};}
+          return;
+        }
+        for(let q=pos;q<=remaining.length-left;q++){chosen.push(remaining[q]);choose(q+1,left-1,chosen);chosen.pop();}
+      }
+      choose(0,z,[]);memo.set(mk,best);return best;
+    }
+    const exact=solve(0,0);
+    if(exact){
+      const wins=new Set(ids.map(id=>pWins.get(id)||0)),tier=wins.size===1?[...wins][0]:null;
+      const conflict=exact.cost[0]>0||exact.cost[1]>0||exact.cost[2]>0;
+      // Si un grupo puro de 3/0 victorias no admite una solución limpia,
+      // aplicar la pauta directa acordada en dupletas: 1+3 / 2+4 para los 3;
+      // espejo 1+4 / 2+3 para los 0. Se etiqueta como inevitable, no como fallo.
+      if(conflict&&(tier===3||tier===0)&&types.every(z=>z===4)){
+        const games=[];for(let i=0;i<ids.length;i+=4){const [a,b,c,d]=ids.slice(i,i+4);games.push({teams:tier===3?[[a,c],[b,d]]:[[a,d],[b,c]]});}
+        return {games,score:exact.cost,unavoidable:true,directAssignment:true};
+      }
+      return {games:exact.games,score:exact.cost,unavoidable:conflict};
+    }
+  }
+  const score=o=>swissMiniCost(o,types,R,pWins,rank);let best=null,bestOrder=null;
+  const attempts=n<=14?180:n<=24?110:70,steps=n<=14?350:n<=24?240:180;
+  for(let a=0;a<attempts;a++){let order=sh(ids),s=score(order),temp=2;for(let step=0;step<steps;step++){const i=Math.floor(Math.random()*n),j=Math.floor(Math.random()*n);if(i===j)continue;[order[i],order[j]]=[order[j],order[i]];const ns=score(order),cur=s[0]*1e10+s[1]*1e8+s[2]*1e6+s[3]*100+s[4],nv=ns[0]*1e10+ns[1]*1e8+ns[2]*1e6+ns[3]*100+ns[4];if(nv<=cur||Math.random()<Math.exp((cur-nv)/Math.max(.5,temp)))s=ns;else [order[i],order[j]]=[order[j],order[i]];temp*=.995;if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}if(best&&best.every(v=>v===0))break;}if(best&&best[0]===0&&best[1]===0&&best[2]===0&&best[4]===0)break;}
+  if(!bestOrder)return null;let k=0,games=[];for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}return {games,score:best};
 }
 function findMinimalPromotion(count,lowerCount){
   for(let k=0;k<=lowerCount;k++)if(composition(count+k))return k;
