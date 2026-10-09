@@ -567,6 +567,23 @@ function optimizeSwissMini(ids,R,pWins){
     if(best&&best.every(v=>v===0))break;
   }
   if(!bestOrder)return null;
+  // Pulido final por inserción: permite mover jugadores entre partidas
+  // completas, algo que los intercambios de dos posiciones pueden atascar.
+  if(targetTier&&n>12){
+    best=score(bestOrder);
+    for(let pass=0;pass<3;pass++){
+      let local=best,bi=-1,bj=-1;
+      for(let i=0;i<n;i++)for(let j=0;j<n;j++){
+        if(i===j)continue;
+        const candidate=bestOrder.slice(),[item]=candidate.splice(i,1);candidate.splice(j,0,item);
+        const sc=score(candidate);
+        if(swissMiniBetter(sc,local)){local=sc;bi=i;bj=j;}
+      }
+      if(bi<0)break;
+      const [item]=bestOrder.splice(bi,1);bestOrder.splice(bj,0,item);best=local;
+      if(best.every(v=>v===0))break;
+    }
+  }
   // En los bloques puros de 3/0 victorias, si la búsqueda no encuentra
   // una solución sin conflictos, respetar la pauta directa acordada por ranking.
   if((tier===3||tier===0)&&(best[0]>0||best[1]>0||best[2]>0)){
