@@ -525,7 +525,7 @@ function optimizeSwissMini(ids,R,pWins){
   const score=o=>swissMiniCost(o,types,R,pWins,rank);
   const wins=new Set(ids.map(id=>pWins.get(id)||0));
   const tier=wins.size===1?[...wins][0]:null;
-  const targetTier=tier===1||tier===2;
+  const targetTier=tier===0||tier===1||tier===2||tier===3;
   let best=null,bestOrder=null;
   // Afinado extra solo para los bloques puros de 1 y 2 victorias grandes.
   // El resto conserva la búsqueda rápida para no penalizar la generación.
