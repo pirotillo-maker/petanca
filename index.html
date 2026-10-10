@@ -506,7 +506,10 @@ function optimizeSwissMini(ids,R,pWins){
         }
         const directScore=games.reduce((sum,g)=>addCost(sum,gameCost(g.teams)),zero);
         const directConflict=directScore[0]>0||directScore[1]>0||directScore[2]>0;
-        return {games,score:directScore,unavoidable:directConflict,directAssignment:true};
+        // Mantener la asignación directa cuando es limpia o no empeora el coste.
+        // Si genera más conflictos que una alternativa válida, conservar la alternativa optimizada.
+        if(!directConflict||swissMiniBetter(directScore,exact.cost)||directScore.every((v,i)=>v===exact.cost[i]))
+          return {games,score:directScore,unavoidable:directConflict,directAssignment:true};
       }
       return {games:exact.games,score:exact.cost,unavoidable:conflict};
     }
@@ -600,7 +603,10 @@ function optimizeSwissMini(ids,R,pWins){
     }
     const directScore=games.reduce((sum,g)=>addCost(sum,gameCost(g.teams)),zero);
     const directConflict=directScore[0]>0||directScore[1]>0||directScore[2]>0;
-    return {games,score:directScore,unavoidable:directConflict,directAssignment:true};
+    // La pauta directa manda si evita conflictos o empata/mejora el resultado;
+    // no debe sustituir una solución optimizada que objetivamente tenga menos conflictos.
+    if(!directConflict||swissMiniBetter(directScore,best)||directScore.every((v,i)=>v===best[i]))
+      return {games,score:directScore,unavoidable:directConflict,directAssignment:true};
   }
   let k=0,games=[];
   for(const z of types){const [as,bs]=gameShape(z);games.push({teams:[bestOrder.slice(k,k+as),bestOrder.slice(k+as,k+z)]});k+=z;}
