@@ -568,6 +568,24 @@ function optimizeSwissMini(ids,R,pWins){
     if(best&&best.every(v=>v===0))break;
   }
   if(!bestOrder)return null;
+  // Pulido final de intercambios exhaustivos solo en bloques grandes de 1/2 victorias.
+  // Es una mejora localizada: busca el mejor intercambio de dos jugadores sin tocar otros módulos.
+  if(targetTier&&n>24){
+    best=score(bestOrder);
+    for(let pass=0;pass<3;pass++){
+      let local=best,bi=-1,bj=-1;
+      for(let i=0;i<n-1;i++)for(let j=i+1;j<n;j++){
+        [bestOrder[i],bestOrder[j]]=[bestOrder[j],bestOrder[i]];
+        const sc=score(bestOrder);
+        if(swissMiniBetter(sc,local)){local=sc;bi=i;bj=j;}
+        [bestOrder[i],bestOrder[j]]=[bestOrder[j],bestOrder[i]];
+      }
+      if(bi<0)break;
+      [bestOrder[bi],bestOrder[bj]]=[bestOrder[bj],bestOrder[bi]];
+      best=local;
+      if(best.every(v=>v===0))break;
+    }
+  }
   // Pulido final por inserción: permite mover jugadores entre partidas
   // completas, algo que los intercambios de dos posiciones pueden atascar.
   if(targetTier&&n>12){
