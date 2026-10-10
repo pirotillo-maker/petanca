@@ -525,17 +525,17 @@ function optimizeSwissMini(ids,R,pWins){
   const score=o=>swissMiniCost(o,types,R,pWins,rank);
   const wins=new Set(ids.map(id=>pWins.get(id)||0));
   const tier=wins.size===1?[...wins][0]:null;
-  const targetTier=tier===0||tier===1||tier===2||tier===3;
+  const targetTier=tier===0||tier===3;
   let best=null,bestOrder=null;
   // Afinado extra solo para los bloques puros de 1 y 2 victorias grandes.
   // El resto conserva la búsqueda rápida para no penalizar la generación.
-  const attempts=targetTier?(n<=20?120:60):(n<=20?20:10);
-  const steps=targetTier?(n<=20?360:260):(n<=20?100:70);
+  const attempts=targetTier?(n<=20?60:24):(n<=20?20:10);
+  const steps=targetTier?(n<=20?220:120):(n<=20?100:70);
   // Temperatura por componente: permite salir de mínimos locales sin romper
   // el orden lexicográfico real de prioridades al elegir el mejor resultado.
   const heat=targetTier?[0.8,1.0,1.5,2.0,8.0]:[0.4,0.5,0.7,1.0,3.0];
   function improve(order,current){
-    const passes=targetTier?8:1;
+    const passes=targetTier?3:1;
     for(let pass=0;pass<passes;pass++){
       let local=current,li=-1,lj=-1;
       if(targetTier&&n<=24){
@@ -583,7 +583,7 @@ function optimizeSwissMini(ids,R,pWins){
   // completas, algo que los intercambios de dos posiciones pueden atascar.
   if(targetTier&&n>12){
     best=score(bestOrder);
-    for(let pass=0;pass<3;pass++){
+    for(let pass=0;pass<1;pass++){
       let local=best,bi=-1,bj=-1;
       for(let i=0;i<n;i++)for(let j=0;j<n;j++){
         if(i===j)continue;
