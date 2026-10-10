@@ -501,7 +501,7 @@ function optimizeSwissMini(ids,R,pWins){
       const conflict=exact.cost[0]>0||exact.cost[1]>0||exact.cost[2]>0;
       // Si un grupo puro de 3/0 victorias no admite una solución limpia,
       // aplicar la pauta directa acordada: puestos 1+3 contra 2+4 en ambos grupos.
-      if(conflict&&(tier===3||tier===0)){
+      if(tier===3||tier===0){
         const games=[];let offset=0;
         for(const z of types){
           const pool=ids.slice(offset,offset+z);offset+=z;
@@ -598,7 +598,7 @@ function optimizeSwissMini(ids,R,pWins){
   }
   // En los bloques puros de 3/0 victorias, si la búsqueda no encuentra
   // una solución sin conflictos, respetar la pauta directa 1+3 contra 2+4.
-  if((tier===3||tier===0)&&(best[0]>0||best[1]>0||best[2]>0)){
+  if(tier===3||tier===0){
     const games=[];let offset=0;
     for(const z of types){
       const pool=ids.slice(offset,offset+z);offset+=z;
