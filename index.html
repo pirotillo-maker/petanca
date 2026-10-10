@@ -460,6 +460,14 @@ function optimizeSwissMini(ids,R,pWins){
   const types=composition(ids.length);if(!types)return null;
   const rank=new Map(ids.map((id,i)=>[id,i])),n=ids.length;
   const addCost=(a,b)=>a.map((v,i)=>v+b[i]),zero=[0,0,0,0,0];
+  // Objetivo primario: reducir el total de conflictos (compañeros, rivales e inversiones).
+  // En empate, se mantienen las prioridades históricas del comparador.
+  function betterCost(a,b){
+    if(!b)return true;
+    const ca=a[0]+a[1]+a[2],cb=b[0]+b[1]+b[2];
+    if(ca!==cb)return ca<cb;
+    return swissMiniBetter(a,b);
+  }
   function gameCost(teams){
     let pr=0,rr=0,inv=0,level=0,rp=0;const [A,B]=teams;
     for(const t of [A,B])for(let i=0;i<t.length;i++)for(let j=i+1;j<t.length;j++){const q=key(t[i],t[j]);if(R.tm.has(q))pr++;if(R.rv.has(q))inv++;level+=Math.abs((pWins.get(t[i])||0)-(pWins.get(t[j])||0));rp+=Math.abs(Math.abs(rank.get(t[i])-rank.get(t[j]))-2);}
@@ -480,7 +488,7 @@ function optimizeSwissMini(ids,R,pWins){
         if(left===0){
           if(!chosen.includes(first))return;
           const pool=chosen.map(i=>ids[i]);let nextMask=mask;for(const i of chosen)nextMask|=(1<<i);
-          for(const teams of options(pool,z)){const tail=solve(nextMask,gi+1);if(!tail)continue;const cost=addCost(gameCost(teams),tail.cost);if(swissMiniBetter(cost,best?.cost))best={cost,games:[{teams},...tail.games]};}
+          for(const teams of options(pool,z)){const tail=solve(nextMask,gi+1);if(!tail)continue;const cost=addCost(gameCost(teams),tail.cost);if(betterCost(cost,best?.cost))best={cost,games:[{teams},...tail.games]};}
           return;
         }
         for(let q=pos;q<=remaining.length-left;q++){chosen.push(remaining[q]);choose(q+1,left-1,chosen);chosen.pop();}
@@ -534,7 +542,7 @@ function optimizeSwissMini(ids,R,pWins){
         for(let i=0;i<n-1;i++)for(let j=i+1;j<n;j++){
           [order[i],order[j]]=[order[j],order[i]];
           const ns=score(order);
-          if(swissMiniBetter(ns,local)){local=ns;li=i;lj=j;}
+          if(betterCost(ns,local)){local=ns;li=i;lj=j;}
           [order[i],order[j]]=[order[j],order[i]];
         }
       }else{
@@ -543,7 +551,7 @@ function optimizeSwissMini(ids,R,pWins){
           if(i===j)continue;
           [order[i],order[j]]=[order[j],order[i]];
           const ns=score(order);
-          if(swissMiniBetter(ns,local)){local=ns;li=i;lj=j;}
+          if(betterCost(ns,local)){local=ns;li=i;lj=j;}
           [order[i],order[j]]=[order[j],order[i]];
         }
       }
@@ -560,14 +568,14 @@ function optimizeSwissMini(ids,R,pWins){
       if(i===j)continue;
       [order[i],order[j]]=[order[j],order[i]];
       const ns=score(order);
-      if(swissMiniBetter(ns,s)){s=ns;continue;}
+      if(betterCost(ns,s)){s=ns;continue;}
       let at=0;while(at<ns.length&&ns[at]===s[at])at++;
       const cooling=Math.max(0.08,1-step/steps);
       if(at<ns.length&&Math.random()<Math.exp(-(ns[at]-s[at])/Math.max(0.05,heat[at]*cooling)))s=ns;
       else [order[i],order[j]]=[order[j],order[i]];
     }
     s=improve(order,s);
-    if(swissMiniBetter(s,best)){best=s.slice();bestOrder=order.slice();}
+    if(betterCost(s,best)){best=s.slice();bestOrder=order.slice();}
     if(best&&best.every(v=>v===0))break;
   }
   if(!bestOrder)return null;
